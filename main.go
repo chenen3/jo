@@ -445,6 +445,31 @@ func newEditor(s tcell.Screen, x1, y1, x2, y2 int, style tcell.Style, src []byte
 // maximize number of lines that can be displayed by the editor at one time
 func (e *editor) height() int { return e.by2 - e.by1 + 1 }
 
+func (e *editor) drawLine(row int) {
+	line := e.buf[row-1]
+	for x := e.bx1; x <= e.bx2; x++ {
+		if x <= e.bx1+len(line)-1 {
+			continue
+		}
+		e.screen.SetContent(x, e.by1+row-e.startLine, ' ', nil, e.style)
+	}
+
+	if len(line) == 0 {
+		return
+	}
+
+	tokens := parseToken(line)
+	i := 0
+	color := tokenColor(tokens[i].class)
+	for j := range line {
+		if j >= tokens[i].off+tokens[i].len && i < len(tokens)-1 {
+			i++
+			color = tokenColor(tokens[i].class)
+		}
+		e.screen.SetContent(e.bx1+j, e.by1+row-e.startLine, line[j], nil, e.style.Foreground(color))
+	}
+}
+
 func (e *editor) draw() {
 	lineBarWidth := 2
 	for i := len(e.buf); i > 0; i = i / 10 {
@@ -472,13 +497,7 @@ func (e *editor) draw() {
 		if e.startLine-1+i >= len(e.buf) {
 			break
 		}
-		s := e.buf[e.startLine-1+i]
-		for j, c := range s {
-			if e.bx1+j > e.bx2 {
-				break
-			}
-			e.screen.SetContent(e.bx1+j, e.by1+i, c, nil, e.style)
-		}
+		e.drawLine(e.startLine + i)
 	}
 	e.screen.ShowCursor(e.cx, e.cy)
 }
@@ -562,10 +581,11 @@ func (e *editor) Insert(r rune) {
 	line = append(append(line[:e.col()-1], r), rs...)
 	// logger.Printf("row:%d col:%d, line: %q", e.row(), e.col(), string(line))
 
-	for i, c := range line {
-		e.screen.SetContent(e.bx1+i, e.cy, c, nil, e.style)
-	}
+	// for i, c := range line {
+	// 	e.screen.SetContent(e.bx1+i, e.cy, c, nil, e.style)
+	// }
 	e.buf[e.row()-1] = line
+	e.drawLine(e.row())
 	e.CursorRight()
 	e.dirty = true
 }
@@ -603,16 +623,18 @@ func (e *editor) DeleteLeft() {
 		// line end
 		line = line[:col-2]
 	} else {
+		// TODO: consider the new function slices.Delete ?
 		line = append(line[:col-2], line[col-1:]...)
 	}
 	// logger.Printf("row:%d col:%d, line: %q", row, col, string(line))
-	for x := e.bx1; x <= e.bx2; x++ {
-		e.screen.SetContent(x, e.cy, ' ', nil, e.style)
-	}
-	for i, c := range line {
-		e.screen.SetContent(e.bx1+i, e.cy, c, nil, e.style)
-	}
+	// for x := e.bx1; x <= e.bx2; x++ {
+	// 	e.screen.SetContent(x, e.cy, ' ', nil, e.style)
+	// }
+	// for i, c := range line {
+	// 	e.screen.SetContent(e.bx1+i, e.cy, c, nil, e.style)
+	// }
 	e.buf[row-1] = line
+	e.drawLine(row)
 	e.CursorLeft()
 }
 
@@ -620,12 +642,13 @@ func (e *editor) DeleteToLineStart() {
 	e.dirty = true
 	row, col := e.row(), e.col()
 	e.buf[row-1] = e.buf[row-1][col-1:]
-	for x := e.bx1; x <= e.bx2; x++ {
-		e.screen.SetContent(x, e.cy, ' ', nil, e.style)
-	}
-	for i, c := range e.buf[row-1] {
-		e.screen.SetContent(e.bx1+i, e.cy, c, nil, e.style)
-	}
+	// for x := e.bx1; x <= e.bx2; x++ {
+	// 	e.screen.SetContent(x, e.cy, ' ', nil, e.style)
+	// }
+	// for i, c := range e.buf[row-1] {
+	// 	e.screen.SetContent(e.bx1+i, e.cy, c, nil, e.style)
+	// }
+	e.drawLine(row)
 	e.CursorLineStart()
 }
 
@@ -633,12 +656,13 @@ func (e *editor) DeleteToLineEnd() {
 	e.dirty = true
 	row, col := e.row(), e.col()
 	e.buf[row-1] = e.buf[row-1][:col-1]
-	for x := e.bx1; x <= e.bx2; x++ {
-		e.screen.SetContent(x, e.cy, ' ', nil, e.style)
-	}
-	for i, c := range e.buf[row-1] {
-		e.screen.SetContent(e.bx1+i, e.cy, c, nil, e.style)
-	}
+	// for x := e.bx1; x <= e.bx2; x++ {
+	// 	e.screen.SetContent(x, e.cy, ' ', nil, e.style)
+	// }
+	// for i, c := range e.buf[row-1] {
+	// 	e.screen.SetContent(e.bx1+i, e.cy, c, nil, e.style)
+	// }
+	e.drawLine(row)
 }
 
 func (e *editor) Enter() {
