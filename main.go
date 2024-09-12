@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -18,6 +16,9 @@ type screen struct {
 	titleBar  *bar
 	editor    *editor
 	statusBar *statusBar
+	promptBox *promptBox
+	filename  string
+	done      chan struct{}
 }
 
 func (s *screen) resize(width, height int) {
@@ -32,6 +33,86 @@ func (s *screen) resize(width, height int) {
 	s.editor.bx2 = width - 1
 	s.editor.by2 = height - 2
 	s.editor.draw()
+
+	if s.promptBox != nil {
+		s.promptBox.Draw()
+	}
+}
+
+func (s *screen) promptSaveBeforeExit() {
+	prompt := "Save changes before exit?"
+	if s.filename == "" {
+		prompt = "Buffer changed, save as: "
+	}
+	cfg := &promptBoxConfig{
+		Screen: s.Screen,
+		Style:  tcell.StyleDefault.Background(tcell.ColorYellow).Foreground(tcell.ColorBlack),
+		Prompt: prompt,
+		Input:  s.filename,
+		OnYes: func() {
+			if s.promptBox.String() == "" {
+				logger.Print("empty filename")
+				return
+			}
+			ff, e := os.Create(s.promptBox.String())
+			if e != nil {
+				logger.Print(e)
+				return
+			}
+			_, e = s.editor.WriteTo(ff)
+			ff.Close()
+			if e != nil {
+				logger.Print(e)
+				return
+			}
+			close(s.done)
+		},
+		OnNo: func() {
+			close(s.done)
+		},
+		OnCancel: func() {
+			s.promptBox = nil
+			s.editor.draw()
+		},
+	}
+	s.promptBox = newPromptBox(cfg)
+	s.promptBox.Draw()
+}
+
+func (s *screen) promptSaveAs() {
+	cfg := &promptBoxConfig{
+		Screen: s.Screen,
+		Style:  tcell.StyleDefault.Background(tcell.ColorYellow).Foreground(tcell.ColorBlack),
+		Prompt: "Save as: ",
+		OnYes: func() {
+			if s.promptBox.String() == "" {
+				logger.Print("empty filename")
+				return
+			}
+			ff, e := os.Create(s.promptBox.String())
+			if e != nil {
+				logger.Print(e)
+				return
+			}
+			_, e = s.editor.WriteTo(ff)
+			ff.Close()
+			if e != nil {
+				logger.Print(e)
+				return
+			}
+			s.promptBox = nil
+			s.editor.draw()
+		},
+		OnNo: func() {
+			close(s.done)
+		},
+		OnCancel: func() {
+			s.promptBox = nil
+			s.editor.draw()
+		},
+	}
+	s.promptBox = newPromptBox(cfg)
+	s.promptBox.Draw()
 }
 
 // bar draws texts in lines
@@ -108,41 +189,42 @@ func main() {
 	}
 	tc.SetStyle(tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset))
 	tc.EnableMouse()
-	tc.SetCursorStyle(tcell.CursorStyleDefault)
+	tc.SetCursorStyle(tcell.CursorStyleBlinkingBlock)
 	tc.EnablePaste()
 	tc.Clear()
 	defer tc.Fini()
 
-	s := &screen{Screen: tc}
-	width, height := s.Size()
+	s := &screen{
+		Screen: tc,
+		done:   make(chan struct{}),
+	}
+	screenWidth, screenHeight := s.Size()
 
-	var filename string
 	if len(os.Args) > 1 {
-		filename = os.Args[1]
+		s.filename = os.Args[1]
 	}
 
 	title := "New Buffer"
-	if filename != "" {
-		title = filename
+	if s.filename != "" {
+		title = s.filename
 	}
 	s.titleBar = &bar{
-		s: s, x1: 0, y1: 0, x2: width - 1, y2: 0, texts: []string{title},
+		s: s, x1: 0, y1: 0, x2: screenWidth - 1, y2: 0, texts: []string{title},
 		style: tcell.StyleDefault.Background(tcell.ColorGray).Foreground(tcell.ColorWhite),
 	}
 	s.titleBar.draw()
 
-	var rw io.ReadWriter
-	if filename != "" {
-		f, e := os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0666)
-		if e != nil {
-			logger.Print(e)
+	var src []byte
+	if s.filename != "" {
+		src, err = os.ReadFile(s.filename)
+		if err != nil {
+			logger.Print(err)
 			return
 		}
-		rw = f
-		defer f.Close()
 	}
+
 	editorStyle := tcell.StyleDefault.Background(tcell.ColorWhite).Foreground(tcell.ColorBlack)
-	editor, err := newEditor(s, 0, 1, width-1, height-2, editorStyle, rw)
+	editor, err := newEditor(s, 0, 1, screenWidth-1, screenHeight-2, editorStyle, src)
 	if err != nil {
 		logger.Println(err)
 		return
@@ -152,25 +234,36 @@ func main() {
 	s.ShowCursor(s.editor.cx, s.editor.cy)
 
 	s.statusBar = &statusBar{
-		s: s, x1: 0, y1: height - 1, x2: width - 1, y2: height - 1,
+		s: s, x1: 0, y1: screenHeight - 1, x2: screenWidth - 1, y2: screenHeight - 1,
 		style: tcell.StyleDefault.Background(tcell.ColorGray).Foreground(tcell.ColorWhite),
 	}
 	s.statusBar.draw()
 
 	for {
+		select {
+		case <-s.done:
+			return
+		default:
+		}
+
 		s.statusBar.update(s.editor.row(), s.editor.col())
 		s.Show()
 		ev := s.PollEvent()
+
 		switch ev := ev.(type) {
 		case *tcell.EventResize:
 			w, h := s.Size()
 			s.resize(w, h)
 			s.Sync()
 		case *tcell.EventMouse:
+			// TODO: editor lost focus
+			if s.promptBox != nil {
+				continue
+			}
 			x, y := ev.Position()
 			switch ev.Buttons() {
 			case tcell.Button1, tcell.Button2:
-				s.editor.PutCursor(x, y)
+				s.editor.SetCursor(x, y)
 			case tcell.WheelUp:
 				deltaY := float32(y)
 				delta := int(deltaY * wheelSensitivity)
@@ -185,43 +278,36 @@ func main() {
 				}
 			}
 		case *tcell.EventKey:
-			logger.Printf("key %s", ev.Name())
-			if s.editor.prompt {
-				// TODO
-				switch ev.Key() {
-				case tcell.KeyRune:
-					logger.Printf("prompt input")
-				case tcell.KeyEnter:
-					s.editor.prompt = false
-					s.editor.draw()
-				case tcell.KeyBackspace, tcell.KeyBackspace2:
-				case tcell.KeyESC:
-					s.editor.prompt = false
-					// cover (or hide) the prompt box
-					s.editor.draw()
-				}
+			if s.promptBox != nil {
+				s.promptBox.Handle(ev)
 				continue
 			}
-
 			switch ev.Key() {
 			case tcell.KeyCtrlQ:
-				// FIXME
-				// if s.editor.Dirty() {
-				// s.AskSave()
-				// }
+				if s.editor.dirty {
+					s.promptSaveBeforeExit()
+					continue
+				}
 				return
 			case tcell.KeyCtrlS:
-				err = s.editor.Save()
+				if s.filename == "" {
+					s.promptSaveAs()
+					continue
+				}
+				ff, err := os.Create(s.filename)
 				if err != nil {
-					if errors.Is(err, errEmptyFileWriter) {
-						s.editor.promptSaveAs()
-						continue
-					}
-					logger.Print(err)
+					logger.Println(err)
+					continue
+				}
+				_, err = s.editor.WriteTo(ff)
+				ff.Close()
+				if err != nil {
+					logger.Println(err)
 					continue
 				}
 				// a new line may be added at the end of file
 				s.editor.draw()
+				s.promptBox = nil
 			case tcell.KeyCtrlA:
 				s.editor.CursorLineStart()
 			case tcell.KeyCtrlE:
@@ -239,12 +325,11 @@ func main() {
 			case tcell.KeyEnter:
 				s.editor.Enter()
 			case tcell.KeyBackspace, tcell.KeyBackspace2:
-				s.editor.DeleteRune()
+				s.editor.DeleteLeft()
 			case tcell.KeyCtrlU:
 				s.editor.DeleteToLineStart()
 			case tcell.KeyCtrlK:
 				s.editor.DeleteToLineEnd()
-				//case tcell.KeyCtrlP:
 			}
 		}
 	}
@@ -270,7 +355,7 @@ func (sb *statusBar) draw() {
 		sb.s.SetContent(sb.x1+i, sb.y1, c, nil, sb.style)
 	}
 
-	text := "ctrl-s save | ctrl-q quit"
+	text := "[ctrl+s] save | [ctrl+q] quit"
 	for i, c := range text {
 		if sb.x1+i > sb.x2 {
 			break
@@ -287,12 +372,10 @@ func (sb *statusBar) update(row, col int) {
 }
 
 type editor struct {
-	x1, y1  int
-	x2, y2  int
-	screen  tcell.Screen
-	style   tcell.Style
-	scanner *bufio.Scanner
-	rw      io.ReadWriter
+	x1, y1 int
+	x2, y2 int
+	screen tcell.Screen
+	style  tcell.Style
 
 	// editable buffer
 	bx1, by1 int
@@ -300,16 +383,15 @@ type editor struct {
 	buf      [][]rune
 	dirty    bool
 
-	lineBar  *bar // FIXME: discard bar, use new type
-	cx, cy   int  // cursor
-	rowStart int  // the number of the first line in buffer
-	prompt   bool
+	lineBar   *bar
+	cx, cy    int // cursor position
+	startLine int
 }
 
-// maximize number of lines that can be displayed by the editor at one time
-func (e *editor) maxLines() int { return e.by2 - e.by1 + 1 }
-
-func newEditor(s tcell.Screen, x1, y1, x2, y2 int, style tcell.Style, rw io.ReadWriter) (*editor, error) {
+// TODO: Accepting src of bytes is not an efficient way, and can lead to lags when loading large files;
+// A Reader or Scanner should be used instead, but this brings up another problem,
+// which is how to incrementally read the file and then rewrite it correctly.
+func newEditor(s tcell.Screen, x1, y1, x2, y2 int, style tcell.Style, src []byte) (*editor, error) {
 	if x1 > x2 {
 		x1, x2 = x2, x1
 	}
@@ -318,37 +400,27 @@ func newEditor(s tcell.Screen, x1, y1, x2, y2 int, style tcell.Style, rw io.Read
 	}
 
 	e := &editor{
-		x1:       x1,
-		y1:       y1,
-		x2:       x2,
-		y2:       y2,
-		screen:   s,
-		rw:       rw,
-		by1:      y1,
-		bx2:      x2,
-		by2:      y2,
-		style:    style,
-		cy:       y1,
-		rowStart: 1,
+		x1:        x1,
+		y1:        y1,
+		x2:        x2,
+		y2:        y2,
+		screen:    s,
+		by1:       y1,
+		bx2:       x2,
+		by2:       y2,
+		style:     style,
+		cy:        y1,
+		startLine: 1,
 	}
 
-	e.buf = make([][]rune, 0, e.maxLines())
-	if rw == nil {
+	a := bytes.Split(src, []byte{'\n'})
+	e.buf = make([][]rune, len(a))
+	for i := range a {
+		e.buf[i] = []rune(string(a[i]))
+	}
+	if len(e.buf) == 0 || len(e.buf[len(e.buf)-1]) != 0 {
+		// file ends with a new line
 		e.buf = append(e.buf, []rune{})
-	} else {
-		e.scanner = bufio.NewScanner(rw)
-		// TODO: refactor
-		for len(e.buf) < e.maxLines() {
-			if e.scanner.Scan() {
-				e.buf = append(e.buf, []rune(e.scanner.Text()))
-			} else if e.scanner.Err() != nil {
-				return nil, e.scanner.Err()
-			} else {
-				// file ends with a new line
-				e.buf = append(e.buf, []rune{})
-				break
-			}
-		}
 	}
 
 	lineBarWidth := 2
@@ -370,20 +442,22 @@ func newEditor(s tcell.Screen, x1, y1, x2, y2 int, style tcell.Style, rw io.Read
 	return e, nil
 }
 
+// maximize number of lines that can be displayed by the editor at one time
+func (e *editor) height() int { return e.by2 - e.by1 + 1 }
+
 func (e *editor) draw() {
 	lineBarWidth := 2
 	for i := len(e.buf); i > 0; i = i / 10 {
 		lineBarWidth++
 	}
 	e.bx1 = e.x1 + lineBarWidth
-	e.cx = e.x1 + lineBarWidth
 	e.lineBar.x2 = e.x1 + lineBarWidth
-	lineNums := make([]string, 0, e.maxLines())
-	for i := 0; i < e.maxLines(); i++ {
-		if i+e.rowStart-1 >= len(e.buf) {
+	lineNums := make([]string, 0, e.height())
+	for i := 0; i < e.height(); i++ {
+		if i+e.startLine-1 >= len(e.buf) {
 			break
 		}
-		lineNums = append(lineNums, strconv.Itoa(i+e.rowStart))
+		lineNums = append(lineNums, strconv.Itoa(i+e.startLine))
 	}
 	e.lineBar.texts = lineNums
 	e.lineBar.draw()
@@ -394,11 +468,11 @@ func (e *editor) draw() {
 		}
 	}
 
-	for i := 0; i < e.maxLines(); i++ {
-		if e.rowStart-1+i >= len(e.buf) {
+	for i := 0; i < e.height(); i++ {
+		if e.startLine-1+i >= len(e.buf) {
 			break
 		}
-		s := e.buf[e.rowStart-1+i]
+		s := e.buf[e.startLine-1+i]
 		for j, c := range s {
 			if e.bx1+j > e.bx2 {
 				break
@@ -406,10 +480,10 @@ func (e *editor) draw() {
 			e.screen.SetContent(e.bx1+j, e.by1+i, c, nil, e.style)
 		}
 	}
+	e.screen.ShowCursor(e.cx, e.cy)
 }
 
-// update cursor and return the new position
-func (e *editor) PutCursor(x, y int) {
+func (e *editor) SetCursor(x, y int) {
 	if x < e.bx1 || x > e.bx2 {
 		return
 	}
@@ -423,8 +497,8 @@ func (e *editor) PutCursor(x, y int) {
 	if y >= e.by1+len(e.buf)-1 {
 		y = e.by1 + len(e.buf) - 1
 	}
-	if x >= e.bx1+len(e.buf[y-e.by1+e.rowStart-1]) {
-		x = e.bx1 + len(e.buf[y-e.by1+e.rowStart-1])
+	if x >= e.bx1+len(e.buf[y-e.by1+e.startLine-1]) {
+		x = e.bx1 + len(e.buf[y-e.by1+e.startLine-1])
 	}
 
 	e.cx, e.cy = x, y
@@ -432,70 +506,53 @@ func (e *editor) PutCursor(x, y int) {
 }
 
 func (e *editor) CursorUp() {
-	if e.row() > 1 && e.row() == e.rowStart {
-		e.rowStart--
+	if e.row() > 1 && e.row() == e.startLine {
+		e.startLine--
 		e.draw()
 	}
-	e.PutCursor(e.cx, e.cy-1)
+	e.SetCursor(e.cx, e.cy-1)
 }
 
 func (e *editor) CursorDown() {
-	if e.row() < e.rowStart+e.maxLines()-1 {
-		e.PutCursor(e.cx, e.cy+1)
+	if e.row() == len(e.buf) {
+		// end of file
 		return
 	}
 
-	// may not have reach the end of the buffer
-	if e.row() < len(e.buf) {
-		e.rowStart++
-		e.draw()
-		e.PutCursor(e.cx, e.cy+1)
+	if e.row() < e.startLine+e.height()-1 {
+		e.SetCursor(e.cx, e.cy+1)
 		return
 	}
 
-	if e.scanner == nil {
-		return
-	}
-	// may not have reach the end of the file
-	if e.scanner.Scan() {
-		e.buf = append(e.buf, []rune(e.scanner.Text()))
-		e.rowStart++
-		e.draw()
-		e.PutCursor(e.cx, e.cy+1)
-		return
-	}
-	if e.scanner.Err() != nil {
-		logger.Print(e.scanner.Err())
-		return
-	}
+	e.startLine++
+	e.draw()
+	e.SetCursor(e.cx, e.cy+1)
 }
 
 func (e *editor) CursorLeft() {
 	if e.col() == 1 {
-		e.PutCursor(e.bx2, e.cy-1)
+		// go to previous line
+		e.SetCursor(e.bx2, e.cy-1)
 		return
 	}
-	e.PutCursor(e.cx-1, e.cy)
+	e.SetCursor(e.cx-1, e.cy)
 }
 
 func (e *editor) CursorRight() {
 	if e.col() == len(e.buf[e.row()-1])+1 {
-		e.PutCursor(e.bx1, e.cy+1)
+		// go to next line
+		e.SetCursor(e.bx1, e.cy+1)
 		return
 	}
-	e.PutCursor(e.cx+1, e.cy)
+	e.SetCursor(e.cx+1, e.cy)
 }
 
 func (e *editor) CursorLineStart() {
-	e.PutCursor(e.bx1, e.cy)
+	e.SetCursor(e.bx1, e.cy)
 }
 
 func (e *editor) CursorLineEnd() {
-	e.PutCursor(e.bx2, e.cy)
-}
-
-func (e *editor) Dirty() bool {
-	return e.dirty
+	e.SetCursor(e.bx2, e.cy)
 }
 
 func (e *editor) Insert(r rune) {
@@ -513,17 +570,18 @@ func (e *editor) Insert(r rune) {
 	e.dirty = true
 }
 
-// current line
+// current line number
 func (e *editor) row() int {
-	return e.cy - e.by1 + e.rowStart
+	return e.cy - e.by1 + e.startLine
 }
 
-// current column
+// current column number
 func (e *editor) col() int {
 	return e.cx - e.bx1 + 1
 }
 
-func (e *editor) DeleteRune() {
+func (e *editor) DeleteLeft() {
+	e.dirty = true
 	row, col := e.row(), e.col()
 	// cursor at the head of line, merge the line to previous one
 	if col == 1 {
@@ -536,13 +594,13 @@ func (e *editor) DeleteRune() {
 		e.draw()
 		// can not update cursor before redrawed,
 		// because the width of lineBar may change, so does bx1
-		e.PutCursor(e.bx1+prevLen, e.cy-1)
+		e.SetCursor(e.bx1+prevLen, e.cy-1)
 		return
 	}
 
 	line := e.buf[row-1]
 	if col-1 == len(line) {
-		// cursor at the end of line
+		// line end
 		line = line[:col-2]
 	} else {
 		line = append(line[:col-2], line[col-1:]...)
@@ -556,10 +614,10 @@ func (e *editor) DeleteRune() {
 	}
 	e.buf[row-1] = line
 	e.CursorLeft()
-	e.dirty = true
 }
 
 func (e *editor) DeleteToLineStart() {
+	e.dirty = true
 	row, col := e.row(), e.col()
 	e.buf[row-1] = e.buf[row-1][col-1:]
 	for x := e.bx1; x <= e.bx2; x++ {
@@ -569,10 +627,10 @@ func (e *editor) DeleteToLineStart() {
 		e.screen.SetContent(e.bx1+i, e.cy, c, nil, e.style)
 	}
 	e.CursorLineStart()
-	e.dirty = true
 }
 
 func (e *editor) DeleteToLineEnd() {
+	e.dirty = true
 	row, col := e.row(), e.col()
 	e.buf[row-1] = e.buf[row-1][:col-1]
 	for x := e.bx1; x <= e.bx2; x++ {
@@ -581,10 +639,10 @@ func (e *editor) DeleteToLineEnd() {
 	for i, c := range e.buf[row-1] {
 		e.screen.SetContent(e.bx1+i, e.cy, c, nil, e.style)
 	}
-	e.dirty = true
 }
 
 func (e *editor) Enter() {
+	e.dirty = true
 	row, col := e.row(), e.col()
 	// cut current line
 	line := e.buf[row-1]
@@ -598,95 +656,169 @@ func (e *editor) Enter() {
 		copy(buf[i], rs)
 	}
 	e.buf = append(append(e.buf[:row], newline), buf...)
-	e.PutCursor(e.bx1, e.cy+1)
 	e.draw()
+	e.SetCursor(e.bx1, e.cy+1)
 }
 
-func (e *editor) Bytes() []byte {
-	buf := make([][]byte, len(e.buf))
-	for i, bs := range e.buf {
-		buf[i] = []byte(string(bs))
-	}
-	return bytes.Join(buf, []byte{'\n'})
-}
-
-var errEmptyFileWriter = errors.New("empty file writer")
-
-func (e *editor) Save() error {
-	if e.rw == nil {
-		return errEmptyFileWriter
-	}
-
+// A newline is appended if the last character of buffer is not
+// already a newline
+func (e *editor) WriteTo(w io.Writer) (int64, error) {
 	if len(e.buf[len(e.buf)-1]) != 0 {
 		// file ends with a new line
 		e.buf = append(e.buf, []rune{})
 	}
-	_, err := e.rw.Write(e.Bytes())
-	return err
-}
+	// TODO: not efficient
+	buf := make([][]byte, len(e.buf))
+	for i, rs := range e.buf {
+		buf[i] = []byte(string(rs))
+	}
+	bs := bytes.Join(buf, []byte{'\n'})
 
-func (e *editor) promptSaveAs() {
-	e.prompt = true
-	// TODO: draw box
-	drawBox(e.screen, e.bx1, e.by1, e.bx1+20, e.by1+20,
-		tcell.StyleDefault.Background(tcell.ColorYellow).Foreground(tcell.ColorBlack), "save as:")
+	n, err := w.Write(bs)
+	if err != nil {
+		return int64(n), err
+	}
+	e.dirty = false
+	return int64(n), nil
 }
 
 type promptBox struct {
+	cfg    *promptBoxConfig
 	x1, y1 int
 	x2, y2 int
-	style  tcell.Style
+
 	buf    []rune
+	noEdit bool
+	cx, cy int
 }
 
-func drawText(s tcell.Screen, x1, y1, x2, y2 int, style tcell.Style, text string) {
-	row := y1
-	col := x1
-	for _, r := range text {
-		s.SetContent(col, row, r, nil, style)
-		col++
-		if col >= x2 {
-			row++
-			col = x1
-		}
-		if row > y2 {
-			break
-		}
-	}
+type promptBoxConfig struct {
+	Screen   tcell.Screen
+	Style    tcell.Style
+	Prompt   string
+	Input    string
+	OnYes    func()
+	OnNo     func()
+	OnCancel func()
 }
 
-func drawBox(s tcell.Screen, x1, y1, x2, y2 int, style tcell.Style, text string) {
-	if y2 < y1 {
-		y1, y2 = y2, y1
+func newPromptBox(cfg *promptBoxConfig) *promptBox {
+	width, height := cfg.Screen.Size()
+	p := promptBox{
+		cfg: cfg,
+		x1:  width / 3,
+		y1:  height / 3,
+		x2:  width * 2 / 3,
+		y2:  (height / 3) + 4,
 	}
-	if x2 < x1 {
-		x1, x2 = x2, x1
+	if cfg.Input != "" {
+		p.buf = []rune(cfg.Input)
+		p.noEdit = true
 	}
+	return &p
+}
 
-	// Fill background
-	for row := y1; row <= y2; row++ {
-		for col := x1; col <= x2; col++ {
-			s.SetContent(col, row, ' ', nil, style)
+func (p *promptBox) Draw() {
+	width, height := p.cfg.Screen.Size()
+	p.x1 = width / 3
+	p.y1 = height / 3
+	p.x2 = width * 2 / 3
+	p.y2 = (height / 3) + 4
+
+	for y := p.y1; y <= p.y2; y++ {
+		for x := p.x1; x <= p.x2; x++ {
+			p.cfg.Screen.SetContent(x, y, ' ', nil, p.cfg.Style)
 		}
 	}
 
 	// Draw borders
-	for col := x1; col <= x2; col++ {
-		s.SetContent(col, y1, tcell.RuneHLine, nil, style)
-		s.SetContent(col, y2, tcell.RuneHLine, nil, style)
+	for x := p.x1; x <= p.x2; x++ {
+		p.cfg.Screen.SetContent(x, p.y1, tcell.RuneHLine, nil, p.cfg.Style)
+		p.cfg.Screen.SetContent(x, p.y2, tcell.RuneHLine, nil, p.cfg.Style)
 	}
-	for row := y1 + 1; row < y2; row++ {
-		s.SetContent(x1, row, tcell.RuneVLine, nil, style)
-		s.SetContent(x2, row, tcell.RuneVLine, nil, style)
+	for y := p.y1 + 1; y < p.y2; y++ {
+		p.cfg.Screen.SetContent(p.x1, y, tcell.RuneVLine, nil, p.cfg.Style)
+		p.cfg.Screen.SetContent(p.x2, y, tcell.RuneVLine, nil, p.cfg.Style)
 	}
-
-	// Only draw corners if necessary
-	if y1 != y2 && x1 != x2 {
-		s.SetContent(x1, y1, tcell.RuneULCorner, nil, style)
-		s.SetContent(x2, y1, tcell.RuneURCorner, nil, style)
-		s.SetContent(x1, y2, tcell.RuneLLCorner, nil, style)
-		s.SetContent(x2, y2, tcell.RuneLRCorner, nil, style)
+	if p.y1 != p.y2 && p.x1 != p.x2 {
+		p.cfg.Screen.SetContent(p.x1, p.y1, tcell.RuneULCorner, nil, p.cfg.Style)
+		p.cfg.Screen.SetContent(p.x2, p.y1, tcell.RuneURCorner, nil, p.cfg.Style)
+		p.cfg.Screen.SetContent(p.x1, p.y2, tcell.RuneLLCorner, nil, p.cfg.Style)
+		p.cfg.Screen.SetContent(p.x2, p.y2, tcell.RuneLRCorner, nil, p.cfg.Style)
 	}
 
-	drawText(s, x1+1, y1+1, x2-1, y2-1, style, text)
+	s := []rune(p.cfg.Prompt)
+	if !p.noEdit {
+		s = append(s, p.buf...)
+	}
+	x := p.x1 + 1
+	y := p.y1 + 1
+	for _, r := range s {
+		if x >= p.x2 {
+			x = p.x1 + 1
+			y++
+		}
+		p.cfg.Screen.SetContent(x, y, r, nil, p.cfg.Style)
+		x++
+	}
+	p.cx = x
+	p.cy = y
+	p.cfg.Screen.ShowCursor(p.cx, p.cy)
+
+	keymap := "[Enter] yes | [Esc] cancel | [ctrl+q] exit"
+	offset := (p.x2 - p.x1 - len(keymap)) / 2
+	for i, r := range keymap {
+		p.cfg.Screen.SetContent(p.x1+1+offset+i, p.y2-1, r, nil, p.cfg.Style)
+	}
+}
+
+func (p *promptBox) Insert(r rune) {
+	if p.noEdit {
+		return
+	}
+	p.buf = append(p.buf, r)
+	if p.cx >= p.x2 {
+		p.cx = p.x1 + 1
+		p.cy++
+	}
+	p.cfg.Screen.SetContent(p.cx, p.cy, r, nil, p.cfg.Style)
+	p.cx++
+	p.cfg.Screen.ShowCursor(p.cx, p.cy)
+}
+
+func (p *promptBox) DeleteLeft() {
+	if p.noEdit {
+		return
+	}
+	if len(p.buf) == 0 {
+		return
+	}
+	p.buf = p.buf[:len(p.buf)-1]
+	p.cx--
+	p.cfg.Screen.SetContent(p.cx, p.cy, ' ', nil, p.cfg.Style)
+	p.cfg.Screen.ShowCursor(p.cx, p.cy)
+}
+
+func (p *promptBox) String() string {
+	return string(p.buf)
+}
+
+func (p *promptBox) Handle(ev tcell.Event) {
+	k, ok := ev.(*tcell.EventKey)
+	if !ok {
+		return
+	}
+
+	switch k.Key() {
+	case tcell.KeyCtrlQ:
+		p.cfg.OnNo()
+	case tcell.KeyRune:
+		p.Insert(k.Rune())
+	case tcell.KeyEnter:
+		p.cfg.OnYes()
+	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		p.DeleteLeft()
+	case tcell.KeyESC:
+		p.cfg.OnCancel()
+	}
 }
