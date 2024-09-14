@@ -39,16 +39,16 @@ func (s *screen) resize(width, height int) {
 	}
 }
 
-func (s *screen) promptSaveBeforeExit() {
-	prompt := "Save changes before exit?"
+func (s *screen) promptSaveExit() {
+	prompt := "Save the changes?"
 	if s.filename == "" {
-		prompt = "Buffer changed, save as: "
+		prompt = "Save the changes made to new file: "
 	}
 	cfg := &promptBoxConfig{
-		Screen: s.Screen,
-		Style:  tcell.StyleDefault.Background(tcell.ColorYellow).Foreground(tcell.ColorBlack),
-		Prompt: prompt,
-		Input:  s.filename,
+		Screen:   s.Screen,
+		Style:    tcell.StyleDefault.Background(tcell.ColorLightYellow).Foreground(tcell.ColorBlack),
+		Prompt:   prompt,
+		Filename: s.filename,
 		OnYes: func() {
 			if s.promptBox.String() == "" {
 				logger.Print("empty filename")
@@ -285,7 +285,7 @@ func main() {
 			switch ev.Key() {
 			case tcell.KeyCtrlQ:
 				if s.editor.dirty {
-					s.promptSaveBeforeExit()
+					s.promptSaveExit()
 					continue
 				}
 				return
@@ -712,7 +712,6 @@ type promptBox struct {
 	x2, y2 int
 
 	buf    []rune
-	noEdit bool
 	cx, cy int
 }
 
@@ -720,7 +719,7 @@ type promptBoxConfig struct {
 	Screen   tcell.Screen
 	Style    tcell.Style
 	Prompt   string
-	Input    string
+	Filename string
 	OnYes    func()
 	OnNo     func()
 	OnCancel func()
@@ -735,19 +734,22 @@ func newPromptBox(cfg *promptBoxConfig) *promptBox {
 		x2:  width * 2 / 3,
 		y2:  (height / 3) + 4,
 	}
-	if cfg.Input != "" {
-		p.buf = []rune(cfg.Input)
-		p.noEdit = true
+	if cfg.Filename != "" {
+		p.buf = []rune(cfg.Filename)
 	}
 	return &p
 }
 
 func (p *promptBox) Draw() {
-	width, height := p.cfg.Screen.Size()
-	p.x1 = width / 3
-	p.y1 = height / 3
-	p.x2 = width * 2 / 3
-	p.y2 = (height / 3) + 4
+	keymap := "[enter] save | [esc] cancel | [ctrl+q] discard"
+	boxWidth := len(keymap) + 3
+	boxHeight := 4
+	// align center
+	screenWidth, screenHeight := p.cfg.Screen.Size()
+	p.x1 = (screenWidth - boxWidth) / 2
+	p.y1 = (screenHeight - boxHeight) / 2
+	p.x2 = p.x1 + boxWidth
+	p.y2 = p.y1 + boxHeight
 
 	for y := p.y1; y <= p.y2; y++ {
 		for x := p.x1; x <= p.x2; x++ {
@@ -772,7 +774,7 @@ func (p *promptBox) Draw() {
 	}
 
 	s := []rune(p.cfg.Prompt)
-	if !p.noEdit {
+	if p.cfg.Filename == "" {
 		s = append(s, p.buf...)
 	}
 	x := p.x1 + 1
@@ -789,7 +791,6 @@ func (p *promptBox) Draw() {
 	p.cy = y
 	p.cfg.Screen.ShowCursor(p.cx, p.cy)
 
-	keymap := "[Enter] yes | [Esc] cancel | [ctrl+q] exit"
 	offset := (p.x2 - p.x1 - len(keymap)) / 2
 	for i, r := range keymap {
 		p.cfg.Screen.SetContent(p.x1+1+offset+i, p.y2-1, r, nil, p.cfg.Style)
@@ -797,21 +798,20 @@ func (p *promptBox) Draw() {
 }
 
 func (p *promptBox) Insert(r rune) {
-	if p.noEdit {
+	if p.cfg.Filename != "" {
+		return
+	}
+	if p.cx >= p.x2 {
 		return
 	}
 	p.buf = append(p.buf, r)
-	if p.cx >= p.x2 {
-		p.cx = p.x1 + 1
-		p.cy++
-	}
 	p.cfg.Screen.SetContent(p.cx, p.cy, r, nil, p.cfg.Style)
 	p.cx++
 	p.cfg.Screen.ShowCursor(p.cx, p.cy)
 }
 
 func (p *promptBox) DeleteLeft() {
-	if p.noEdit {
+	if p.cfg.Filename != "" {
 		return
 	}
 	if len(p.buf) == 0 {
