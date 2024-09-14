@@ -231,7 +231,6 @@ func main() {
 	}
 	s.editor = editor
 	s.editor.draw()
-	s.ShowCursor(s.editor.cx, s.editor.cy)
 
 	s.statusBar = &statusBar{
 		s: s, x1: 0, y1: screenHeight - 1, x2: screenWidth - 1, y2: screenHeight - 1,
@@ -246,7 +245,7 @@ func main() {
 		default:
 		}
 
-		s.statusBar.update(s.editor.row(), s.editor.col())
+		s.statusBar.update(s.editor.Row(), s.editor.Col())
 		s.Show()
 		ev := s.PollEvent()
 
@@ -381,10 +380,11 @@ type editor struct {
 	bx1, by1 int
 	bx2, by2 int
 	buf      [][]rune
+	row, col int // current number of line and column in buffer
 	dirty    bool
 
-	lineBar   *bar
-	cx, cy    int // cursor position
+	lineBar *bar
+	// cx, cy    int // cursor position
 	startLine int
 }
 
@@ -409,8 +409,9 @@ func newEditor(s tcell.Screen, x1, y1, x2, y2 int, style tcell.Style, src []byte
 		bx2:       x2,
 		by2:       y2,
 		style:     style,
-		cy:        y1,
 		startLine: 1,
+		row:       1,
+		col:       1,
 	}
 
 	a := bytes.Split(src, []byte{'\n'})
@@ -428,7 +429,6 @@ func newEditor(s tcell.Screen, x1, y1, x2, y2 int, style tcell.Style, src []byte
 		lineBarWidth++
 	}
 	e.bx1 = x1 + lineBarWidth
-	e.cx = x1 + lineBarWidth
 	e.lineBar = &bar{
 		s:            s,
 		x1:           x1,
@@ -499,189 +499,213 @@ func (e *editor) draw() {
 		}
 		e.drawLine(e.startLine + i)
 	}
-	e.screen.ShowCursor(e.cx, e.cy)
+	e.ShowCursor()
+}
+
+func (e *editor) cursorRowAdd(delta int) {
+	if delta == 0 {
+		return
+	}
+
+	row := e.row + delta
+	if row < 1 {
+		row = 1
+	} else if row > len(e.buf) {
+		row = len(e.buf)
+	}
+	e.row = row
+
+	if e.col > len(e.buf[e.row-1])+1 {
+		e.col = len(e.buf[e.row-1]) + 1
+	}
+}
+
+func (e *editor) cursorColAdd(delta int) {
+	col := e.col + delta
+	if 1 <= col && col <= len(e.buf[e.row-1])+1 {
+		e.col = col
+		return
+	}
+
+	// line start
+	if col < 1 {
+		if e.row == 1 {
+			e.col = 1
+			return
+		}
+		// to the end of the previous line
+		e.row--
+		e.col = len(e.buf[e.row-1]) + 1
+		return
+	}
+
+	// line end
+	if e.row == len(e.buf) {
+		e.col = len(e.buf[e.row-1]) + 1
+		return
+	}
+	e.row++
+	e.col = 1
 }
 
 func (e *editor) SetCursor(x, y int) {
-	if x < e.bx1 || x > e.bx2 {
-		return
+	if y < e.by1 {
+		y = e.by1
 	}
-	if y < e.by1 || y > e.by2 {
-		return
+	row := y - e.by1 + e.startLine
+	col := x - e.bx1 + 1
+	if row > len(e.buf) {
+		row = len(e.buf)
 	}
-	if x == e.cx && y == e.cy {
-		return
+	if col > len(e.buf[row-1])+1 {
+		col = len(e.buf[row-1]) + 1
 	}
-	// in editable area
-	if y >= e.by1+len(e.buf)-1 {
-		y = e.by1 + len(e.buf) - 1
-	}
-	if x >= e.bx1+len(e.buf[y-e.by1+e.startLine-1]) {
-		x = e.bx1 + len(e.buf[y-e.by1+e.startLine-1])
-	}
+	e.row, e.col = row, col
+	e.ShowCursor()
+}
 
-	e.cx, e.cy = x, y
-	e.screen.ShowCursor(x, y)
+func (e *editor) ShowCursor() {
+	e.screen.ShowCursor(e.bx1+e.col-1, e.by1+e.row-e.startLine)
 }
 
 func (e *editor) CursorUp() {
-	if e.row() > 1 && e.row() == e.startLine {
-		e.startLine--
-		e.draw()
+	if e.row == 1 {
+		return
 	}
-	e.SetCursor(e.cx, e.cy-1)
+	if e.row == e.startLine {
+		e.startLine--
+		e.cursorRowAdd(-1)
+		e.draw()
+		return
+	}
+	e.cursorRowAdd(-1)
+	e.ShowCursor()
 }
 
 func (e *editor) CursorDown() {
-	if e.row() == len(e.buf) {
+	if e.row == len(e.buf) {
 		// end of file
 		return
 	}
 
-	if e.row() < e.startLine+e.height()-1 {
-		e.SetCursor(e.cx, e.cy+1)
+	logger.Print(e.row, e.startLine+e.height()-1)
+	if e.row < e.startLine+e.height()-1 {
+		e.cursorRowAdd(1)
+		e.ShowCursor()
 		return
 	}
 
 	e.startLine++
+	e.cursorRowAdd(1)
 	e.draw()
-	e.SetCursor(e.cx, e.cy+1)
 }
 
 func (e *editor) CursorLeft() {
-	if e.col() == 1 {
-		// go to previous line
-		e.SetCursor(e.bx2, e.cy-1)
-		return
-	}
-	e.SetCursor(e.cx-1, e.cy)
+	e.cursorColAdd(-1)
+	e.ShowCursor()
 }
 
 func (e *editor) CursorRight() {
-	if e.col() == len(e.buf[e.row()-1])+1 {
-		// go to next line
-		e.SetCursor(e.bx1, e.cy+1)
-		return
-	}
-	e.SetCursor(e.cx+1, e.cy)
+	e.cursorColAdd(1)
+	e.ShowCursor()
 }
 
 func (e *editor) CursorLineStart() {
-	e.SetCursor(e.bx1, e.cy)
+	e.col = 1
+	e.ShowCursor()
 }
 
 func (e *editor) CursorLineEnd() {
-	e.SetCursor(e.bx2, e.cy)
+	e.cursorColAdd(len(e.buf[e.row-1]) - e.col + 1)
+	e.ShowCursor()
 }
 
 func (e *editor) Insert(r rune) {
-	line := e.buf[e.row()-1]
-	rs := make([]rune, len(line[e.col()-1:]))
-	copy(rs, line[e.col()-1:])
-	line = append(append(line[:e.col()-1], r), rs...)
-	// logger.Printf("row:%d col:%d, line: %q", e.row(), e.col(), string(line))
-
-	// for i, c := range line {
-	// 	e.screen.SetContent(e.bx1+i, e.cy, c, nil, e.style)
-	// }
-	e.buf[e.row()-1] = line
-	e.drawLine(e.row())
+	line := e.buf[e.row-1]
+	rs := make([]rune, len(line[e.col-1:]))
+	copy(rs, line[e.col-1:])
+	line = append(append(line[:e.col-1], r), rs...)
+	e.buf[e.row-1] = line
+	e.drawLine(e.row)
 	e.CursorRight()
+	e.ShowCursor()
 	e.dirty = true
 }
 
-// current line number
-func (e *editor) row() int {
-	return e.cy - e.by1 + e.startLine
+// Row return current number of line in editor
+func (e *editor) Row() int {
+	return e.row
 }
 
-// current column number
-func (e *editor) col() int {
-	return e.cx - e.bx1 + 1
+// Col return current number of column in editor,
+// which is different from e.col
+func (e *editor) Col() int {
+	return e.col
 }
 
 func (e *editor) DeleteLeft() {
 	e.dirty = true
-	row, col := e.row(), e.col()
 	// cursor at the head of line, merge the line to previous one
-	if col == 1 {
-		if row == 1 {
+	if e.col == 1 {
+		if e.row == 1 {
 			return
 		}
-		prevLen := len(e.buf[row-2])
-		e.buf[row-2] = append(e.buf[row-2], e.buf[row-1]...)
-		e.buf = append(e.buf[:row-1], e.buf[row:]...)
+		// prevLen := len(e.buf[e.row-2])
+		prevLine := e.buf[e.row-2]
+		e.buf[e.row-2] = append(prevLine, e.buf[e.row-1]...)
+		e.buf = append(e.buf[:e.row-1], e.buf[e.row:]...)
+		e.cursorRowAdd(-1)
+		e.cursorColAdd(len(prevLine) - e.col)
 		e.draw()
 		// can not update cursor before redrawed,
 		// because the width of lineBar may change, so does bx1
-		e.SetCursor(e.bx1+prevLen, e.cy-1)
+		// e.SetCursor(e.bx1+prevLen, e.cy-1)
 		return
 	}
 
-	line := e.buf[row-1]
-	if col-1 == len(line) {
+	line := e.buf[e.row-1]
+	if e.col-1 == len(line) {
 		// line end
-		line = line[:col-2]
+		line = line[:e.col-2]
 	} else {
 		// TODO: consider the new function slices.Delete ?
-		line = append(line[:col-2], line[col-1:]...)
+		line = append(line[:e.col-2], line[e.col-1:]...)
 	}
-	// logger.Printf("row:%d col:%d, line: %q", row, col, string(line))
-	// for x := e.bx1; x <= e.bx2; x++ {
-	// 	e.screen.SetContent(x, e.cy, ' ', nil, e.style)
-	// }
-	// for i, c := range line {
-	// 	e.screen.SetContent(e.bx1+i, e.cy, c, nil, e.style)
-	// }
-	e.buf[row-1] = line
-	e.drawLine(row)
+	e.buf[e.row-1] = line
+	e.drawLine(e.row)
 	e.CursorLeft()
 }
 
 func (e *editor) DeleteToLineStart() {
 	e.dirty = true
-	row, col := e.row(), e.col()
-	e.buf[row-1] = e.buf[row-1][col-1:]
-	// for x := e.bx1; x <= e.bx2; x++ {
-	// 	e.screen.SetContent(x, e.cy, ' ', nil, e.style)
-	// }
-	// for i, c := range e.buf[row-1] {
-	// 	e.screen.SetContent(e.bx1+i, e.cy, c, nil, e.style)
-	// }
-	e.drawLine(row)
+	e.buf[e.row-1] = e.buf[e.row-1][e.col-1:]
+	e.drawLine(e.row)
 	e.CursorLineStart()
 }
 
 func (e *editor) DeleteToLineEnd() {
 	e.dirty = true
-	row, col := e.row(), e.col()
-	e.buf[row-1] = e.buf[row-1][:col-1]
-	// for x := e.bx1; x <= e.bx2; x++ {
-	// 	e.screen.SetContent(x, e.cy, ' ', nil, e.style)
-	// }
-	// for i, c := range e.buf[row-1] {
-	// 	e.screen.SetContent(e.bx1+i, e.cy, c, nil, e.style)
-	// }
-	e.drawLine(row)
+	e.buf[e.row-1] = e.buf[e.row-1][:e.col-1]
+	e.drawLine(e.row)
 }
 
 func (e *editor) Enter() {
 	e.dirty = true
-	row, col := e.row(), e.col()
 	// cut current line
-	line := e.buf[row-1]
-	e.buf[row-1] = line[:col-1]
-	newline := make([]rune, len(line[col-1:]))
-	copy(newline, line[col-1:])
+	line := e.buf[e.row-1]
+	newline := make([]rune, len(line[e.col-1:]))
+	copy(newline, line[e.col-1:])
+	e.buf[e.row-1] = line[:e.col-1]
 	// TODO: not efficient
-	buf := make([][]rune, len(e.buf[row:]))
-	for i, rs := range e.buf[row:] {
+	buf := make([][]rune, len(e.buf[e.row:]))
+	for i, rs := range e.buf[e.row:] {
 		buf[i] = make([]rune, len(rs))
 		copy(buf[i], rs)
 	}
-	e.buf = append(append(e.buf[:row], newline), buf...)
+	e.buf = append(append(e.buf[:e.row], newline), buf...)
+	e.cursorRowAdd(1)
+	e.CursorLineStart()
 	e.draw()
-	e.SetCursor(e.bx1, e.cy+1)
 }
 
 // A newline is appended if the last character of buffer is not
