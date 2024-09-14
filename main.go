@@ -321,6 +321,8 @@ func main() {
 				s.editor.CursorRight()
 			case tcell.KeyRune:
 				s.editor.Insert(ev.Rune())
+			case tcell.KeyTab:
+				s.editor.Insert('\t')
 			case tcell.KeyEnter:
 				s.editor.Enter()
 			case tcell.KeyBackspace, tcell.KeyBackspace2:
@@ -380,7 +382,8 @@ type editor struct {
 	bx1, by1 int
 	bx2, by2 int
 	buf      [][]rune
-	row, col int // current number of line and column in buffer
+	row      int // current number of line in buffer
+	col      int // current number of column in buffer
 	dirty    bool
 
 	lineBar *bar
@@ -445,6 +448,20 @@ func newEditor(s tcell.Screen, x1, y1, x2, y2 int, style tcell.Style, src []byte
 // maximize number of lines that can be displayed by the editor at one time
 func (e *editor) height() int { return e.by2 - e.by1 + 1 }
 
+const tabWidth = 4
+
+// return the number of leading tabs
+func leadingTabs(line []rune) int {
+	var n int
+	for i := range line {
+		if line[i] != '\t' {
+			break
+		}
+		n++
+	}
+	return n
+}
+
 func (e *editor) drawLine(row int) {
 	line := e.buf[row-1]
 	for x := e.bx1; x <= e.bx2; x++ {
@@ -461,12 +478,23 @@ func (e *editor) drawLine(row int) {
 	tokens := parseToken(line)
 	i := 0
 	color := tokenColor(tokens[i].class)
+	tabs := leadingTabs(line)
+	padding := 0
 	for j := range line {
 		if j >= tokens[i].off+tokens[i].len && i < len(tokens)-1 {
 			i++
 			color = tokenColor(tokens[i].class)
 		}
-		e.screen.SetContent(e.bx1+j, e.by1+row-e.startLine, line[j], nil, e.style.Foreground(color))
+
+		e.screen.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, line[j], nil, e.style.Foreground(color))
+		if j < tabs {
+			// display tab as '|' for debugging
+			e.screen.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, '|', nil, e.style.Foreground(tcell.ColorGray))
+			for k := 0; k < tabWidth-1; k++ {
+				padding++
+				e.screen.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, '.', nil, e.style.Foreground(tcell.ColorGray))
+			}
+		}
 	}
 }
 
@@ -554,6 +582,20 @@ func (e *editor) SetCursor(x, y int) {
 	}
 	row := y - e.by1 + e.startLine
 	col := x - e.bx1 + 1
+	tabs := leadingTabs(e.buf[row-1])
+	if col <= tabs*tabWidth {
+		i, j := col/tabWidth, col%tabWidth
+		// When the position of the cursor is more than half of the tabWidth,
+		// it is considered to move to the next tab.
+		if j > tabWidth/2 {
+			col = i + 2
+		} else {
+			col = i + 1
+		}
+	} else {
+		col -= tabs * (tabWidth - 1)
+	}
+
 	if row > len(e.buf) {
 		row = len(e.buf)
 	}
@@ -565,7 +607,16 @@ func (e *editor) SetCursor(x, y int) {
 }
 
 func (e *editor) ShowCursor() {
-	e.screen.ShowCursor(e.bx1+e.col-1, e.by1+e.row-e.startLine)
+	tabs := leadingTabs(e.buf[e.row-1])
+	var x int
+	if e.col <= tabs {
+		x = e.bx1 + (e.col-1)*tabWidth
+	} else {
+		padding := tabs * (tabWidth - 1)
+		x = e.bx1 + e.col + padding - 1
+	}
+
+	e.screen.ShowCursor(x, e.by1+e.row-e.startLine)
 }
 
 func (e *editor) CursorUp() {
@@ -588,7 +639,6 @@ func (e *editor) CursorDown() {
 		return
 	}
 
-	logger.Print(e.row, e.startLine+e.height()-1)
 	if e.row < e.startLine+e.height()-1 {
 		e.cursorRowAdd(1)
 		e.ShowCursor()
@@ -638,9 +688,18 @@ func (e *editor) Row() int {
 }
 
 // Col return current number of column in editor,
-// which is different from e.col
+// it is intended for the line number of status line.
+// Note that it is different from e.col.
 func (e *editor) Col() int {
-	return e.col
+	var col int
+	tabs := leadingTabs(e.buf[e.row-1])
+	if e.col <= tabs {
+		col = (e.col-1)*tabWidth + 1
+	} else {
+		padding := tabs * (tabWidth - 1)
+		col = e.col + padding
+	}
+	return col
 }
 
 func (e *editor) DeleteLeft() {
@@ -655,11 +714,8 @@ func (e *editor) DeleteLeft() {
 		e.buf[e.row-2] = append(prevLine, e.buf[e.row-1]...)
 		e.buf = append(e.buf[:e.row-1], e.buf[e.row:]...)
 		e.cursorRowAdd(-1)
-		e.cursorColAdd(len(prevLine) - e.col)
+		e.cursorColAdd(1 + len(prevLine) - e.col)
 		e.draw()
-		// can not update cursor before redrawed,
-		// because the width of lineBar may change, so does bx1
-		// e.SetCursor(e.bx1+prevLen, e.cy-1)
 		return
 	}
 
