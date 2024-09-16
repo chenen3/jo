@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/gdamore/tcell/v2"
 )
@@ -281,13 +282,22 @@ func main() {
 				s.promptBox.Handle(ev)
 				continue
 			}
-			switch ev.Key() {
-			case tcell.KeyCtrlQ:
+			if ev.Key() == tcell.KeyCtrlQ {
 				if s.editor.dirty {
 					s.promptSaveExit()
 					continue
 				}
 				return
+			}
+
+			// FIXME: I click the buffer when findBar is showing,
+			// the buffer should take the input focus
+			if s.editor.findBar != nil {
+				s.editor.HandleFind(ev)
+				continue
+			}
+
+			switch ev.Key() {
 			case tcell.KeyCtrlS:
 				if s.filename == "" {
 					s.promptSaveAs()
@@ -331,6 +341,8 @@ func main() {
 				s.editor.DeleteToLineStart()
 			case tcell.KeyCtrlK:
 				s.editor.DeleteToLineEnd()
+			case tcell.KeyCtrlF:
+				s.editor.Find()
 			}
 		}
 	}
@@ -389,6 +401,8 @@ type editor struct {
 	lineBar *bar
 	// cx, cy    int // cursor position
 	startLine int
+
+	findBar *findBar
 }
 
 // TODO: Accepting src of bytes is not an efficient way, and can lead to lags when loading large files;
@@ -475,24 +489,48 @@ func (e *editor) drawLine(row int) {
 		return
 	}
 
+	var mi int
+	var inLineMatch [][2]int
+	if e.findBar != nil && len(e.findBar.match) > 0 {
+		for _, m := range e.findBar.match {
+			if m[0] == row-1 {
+				inLineMatch = append(inLineMatch, m)
+			}
+		}
+	}
+
 	tokens := parseToken(line)
 	i := 0
-	color := tokenColor(tokens[i].class)
 	tabs := leadingTabs(line)
 	padding := 0
+	style := e.style.Foreground(tokenColor(tokens[i].class))
 	for j := range line {
 		if j >= tokens[i].off+tokens[i].len && i < len(tokens)-1 {
 			i++
-			color = tokenColor(tokens[i].class)
+			style = style.Foreground(tokenColor(tokens[i].class))
 		}
 
-		e.screen.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, line[j], nil, e.style.Foreground(color))
+		if len(inLineMatch) > 0 && mi < len(inLineMatch) {
+			if inLineMatch[mi][1] <= j && j < inLineMatch[mi][1]+len(e.findBar.keyword) {
+				if inLineMatch[mi] == e.findBar.match[e.findBar.i] {
+					style = style.Background(tcell.ColorYellow)
+				} else {
+					style = style.Background(tcell.ColorLightYellow)
+				}
+			} else if j >= inLineMatch[mi][1]+len(e.findBar.keyword) {
+				mi++
+				// restore
+				style = style.Background(tcell.ColorWhite)
+			}
+		}
+
+		e.screen.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, line[j], nil, style)
 		if j < tabs {
-			// display tab as '|' for debugging
-			e.screen.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, '|', nil, e.style.Foreground(tcell.ColorGray))
+			// consider displaying tab as '|' for debugging
+			e.screen.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, ' ', nil, e.style.Foreground(tcell.ColorGray))
 			for k := 0; k < tabWidth-1; k++ {
 				padding++
-				e.screen.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, '.', nil, e.style.Foreground(tcell.ColorGray))
+				e.screen.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, ' ', nil, e.style.Foreground(tcell.ColorGray))
 			}
 		}
 	}
@@ -528,6 +566,10 @@ func (e *editor) draw() {
 		e.drawLine(e.startLine + i)
 	}
 	e.ShowCursor()
+
+	if e.findBar != nil {
+		e.findBar.draw()
+	}
 }
 
 func (e *editor) cursorRowAdd(delta int) {
@@ -581,6 +623,9 @@ func (e *editor) SetCursor(x, y int) {
 		y = e.by1
 	}
 	row := y - e.by1 + e.startLine
+	if row > len(e.buf) {
+		row = len(e.buf)
+	}
 	col := x - e.bx1 + 1
 	tabs := leadingTabs(e.buf[row-1])
 	if col <= tabs*tabWidth {
@@ -596,9 +641,6 @@ func (e *editor) SetCursor(x, y int) {
 		col -= tabs * (tabWidth - 1)
 	}
 
-	if row > len(e.buf) {
-		row = len(e.buf)
-	}
 	if col > len(e.buf[row-1])+1 {
 		col = len(e.buf[row-1]) + 1
 	}
@@ -784,6 +826,87 @@ func (e *editor) WriteTo(w io.Writer) (int64, error) {
 	}
 	e.dirty = false
 	return int64(n), nil
+}
+
+func (e *editor) Find() {
+	if e.findBar == nil {
+		e.findBar = &findBar{s: e.screen}
+	}
+	defer e.draw()
+	if len(e.findBar.keyword) == 0 {
+		return
+	}
+
+	var match [][2]int
+	for i := range e.buf {
+		j := strings.Index(string(e.buf[i]), string(e.findBar.keyword))
+		if j >= 0 {
+			match = append(match, [2]int{i, j})
+		}
+	}
+	e.findBar.match = match
+	if len(match) == 0 {
+		return
+	}
+
+	e.row = match[0][0] + 1
+	// place the cursor at the end of the matching word for easy editing
+	e.col = match[0][1] + len(e.findBar.keyword) + 1
+	if e.row < e.startLine {
+		e.startLine = e.row
+	} else if e.row > (e.startLine + e.height() - 1) {
+		e.startLine = e.row - e.height()/2
+	}
+}
+
+func (e *editor) FindNext() {
+	if len(e.findBar.match) == 0 {
+		return
+	}
+	i, j := e.findBar.next()
+	e.row = i + 1
+	if e.row < e.startLine {
+		e.startLine = e.row
+	} else if e.row > (e.startLine + e.height() - 1) {
+		e.startLine = e.row - e.height()/2
+	}
+	// place the cursor at the end of the matching word for easy editing
+	e.col = j + len(e.findBar.keyword) + 1
+	e.draw()
+}
+
+func (e *editor) FindPrev() {
+	if len(e.findBar.match) == 0 {
+		return
+	}
+	i, j := e.findBar.prev()
+	e.row = i + 1
+	if e.row < e.startLine {
+		e.startLine = e.row
+	} else if e.row > (e.startLine + e.height() - 1) {
+		e.startLine = e.row - e.height()/2
+	}
+	// place the cursor at the end of the matching word for easy editing
+	e.col = j + len(e.findBar.keyword) + 1
+	e.draw()
+}
+
+func (e *editor) HandleFind(k *tcell.EventKey) {
+	switch k.Key() {
+	case tcell.KeyEsc:
+		e.findBar = nil
+		e.draw()
+	case tcell.KeyRune:
+		e.findBar.insert(k.Rune())
+		e.Find()
+	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		e.findBar.deleteLeft()
+		e.Find()
+	case tcell.KeyEnter, tcell.KeyCtrlN:
+		e.FindNext()
+	case tcell.KeyCtrlP:
+		e.FindPrev()
+	}
 }
 
 type promptBox struct {
