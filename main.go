@@ -368,7 +368,7 @@ func (sb *statusBar) draw() {
 		sb.s.SetContent(sb.x1+i, sb.y1, c, nil, sb.style)
 	}
 
-	text := "[ctrl+s] save | [ctrl+q] quit"
+	text := "[ctrl+f] find | [ctrl+s] save | [ctrl+q] quit"
 	for i, c := range text {
 		if sb.x1+i > sb.x2 {
 			break
@@ -849,8 +849,8 @@ func (e *editor) Find() {
 		return
 	}
 
-	// goto the nearest matching position
-	var minGap = e.height()
+	// jump to the nearest matching line
+	var minGap = len(e.buf)
 	var near int
 	for i, m := range match {
 		gap := m[0] + 1 - e.findBar.row
@@ -864,6 +864,7 @@ func (e *editor) Find() {
 			minGap = gap
 			near = i
 		} else {
+			// the matching results are naturally ordered
 			break
 		}
 	}

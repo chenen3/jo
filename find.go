@@ -23,25 +23,24 @@ var findBarStyle = tcell.StyleDefault.Background(tcell.ColorLightYellow).Foregro
 func (f *findBar) draw() {
 	width, _ := f.s.Size()
 	// align right
-	f.x1, f.y1 = width-20, 1
+	f.x1, f.y1 = width-30, 1
 	f.x2, f.y2 = width-1, 1
 	for y := f.y1; y <= f.y2; y++ {
 		for x := f.x1; x <= f.x2; x++ {
 			f.s.SetContent(x, y, ' ', nil, findBarStyle)
 		}
 	}
-	for i := range f.keyword {
-		f.s.SetContent(f.x1+i, f.y1, f.keyword[i], nil, findBarStyle)
+
+	s := "search:" + string(f.keyword)
+	for i, c := range s {
+		f.s.SetContent(f.x1+i, f.y1, c, nil, findBarStyle)
 	}
-	f.cx, f.cy = f.x1+len(f.keyword), f.y1
+	f.cx, f.cy = f.x1+len(s), f.y1
 	f.s.ShowCursor(f.cx, f.cy)
 }
 
 func (f *findBar) insert(r rune) {
 	f.keyword = append(f.keyword, r)
-	f.s.SetContent(f.cx, f.cy, r, nil, findBarStyle)
-	f.cx++
-	f.s.ShowCursor(f.cx, f.cy)
 }
 
 func (f *findBar) deleteLeft() {
@@ -49,7 +48,6 @@ func (f *findBar) deleteLeft() {
 		return
 	}
 	f.keyword = f.keyword[:len(f.keyword)-1]
-	f.draw()
 }
 
 func (f *findBar) next() (int, int) {
