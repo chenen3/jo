@@ -3,17 +3,19 @@ package main
 import "github.com/gdamore/tcell/v2"
 
 type findBar struct {
-	s       tcell.Screen
+	s        tcell.Screen
+	row, col int // cursor position when starting search
+
 	x1, y1  int
 	x2, y2  int
 	keyword []rune
 	match   [][2]int // [][2]int{lineIndex, columnIndex}
-	i       int      // index of match
+	i       int      // index of the matching result
 	cx, cy  int      // cursor position
 }
 
-func newFindBar(s tcell.Screen) *findBar {
-	return &findBar{s: s}
+func newFindBar(s tcell.Screen, row, col int) *findBar {
+	return &findBar{s: s, row: row, col: col}
 }
 
 var findBarStyle = tcell.StyleDefault.Background(tcell.ColorLightYellow).Foreground(tcell.ColorBlack)

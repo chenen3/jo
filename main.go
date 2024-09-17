@@ -491,7 +491,7 @@ func (e *editor) drawLine(row int) {
 
 	var mi int
 	var inLineMatch [][2]int
-	if e.findBar != nil && len(e.findBar.match) > 0 {
+	if e.findBar != nil {
 		for _, m := range e.findBar.match {
 			if m[0] == row-1 {
 				inLineMatch = append(inLineMatch, m)
@@ -526,7 +526,7 @@ func (e *editor) drawLine(row int) {
 
 		e.screen.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, line[j], nil, style)
 		if j < tabs {
-			// consider displaying tab as '|' for debugging
+			// consider showing tab as '|' for debugging
 			e.screen.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, ' ', nil, e.style.Foreground(tcell.ColorGray))
 			for k := 0; k < tabWidth-1; k++ {
 				padding++
@@ -830,7 +830,7 @@ func (e *editor) WriteTo(w io.Writer) (int64, error) {
 
 func (e *editor) Find() {
 	if e.findBar == nil {
-		e.findBar = &findBar{s: e.screen}
+		e.findBar = newFindBar(e.screen, e.row, e.col)
 	}
 	defer e.draw()
 	if len(e.findBar.keyword) == 0 {
@@ -849,9 +849,29 @@ func (e *editor) Find() {
 		return
 	}
 
-	e.row = match[0][0] + 1
+	// goto the nearest matching position
+	var minGap = e.height()
+	var near int
+	for i, m := range match {
+		gap := m[0] + 1 - e.findBar.row
+		if gap < 0 {
+			gap = 0 - gap
+		}
+		if gap == 0 {
+			near = i
+			break
+		} else if gap < minGap {
+			minGap = gap
+			near = i
+		} else {
+			break
+		}
+	}
+	e.findBar.i = near
+
+	e.row = match[near][0] + 1
 	// place the cursor at the end of the matching word for easy editing
-	e.col = match[0][1] + len(e.findBar.keyword) + 1
+	e.col = match[near][1] + len(e.findBar.keyword) + 1
 	if e.row < e.startLine {
 		e.startLine = e.row
 	} else if e.row > (e.startLine + e.height() - 1) {
