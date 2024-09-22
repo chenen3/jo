@@ -399,9 +399,7 @@ type editor struct {
 	findBar *findBar
 }
 
-// TODO: Accepting src of bytes is not an efficient way, and can lead to lags when loading large files;
-// A Reader or Scanner should be used instead, but this brings up another problem,
-// which is how to incrementally read the file and then rewrite it correctly.
+// It is not efficient to accept src in bytes, but it is acceptable.
 func newEditor(s tcell.Screen, x1, y1, x2, y2 int, style tcell.Style, src []byte) (*editor, error) {
 	if x1 > x2 {
 		x1, x2 = x2, x1

@@ -1,12 +1,3 @@
-A experimental text editor named Jo.
-A experimental text editor named Jo.
-sdfdsf
-A experimental text editor named Jo.
-A experimental text editor named Jo.
-sdfdsf
-A experimental text editor named Jo.
-A experimental text editor named Jo.
-sdfdsf
-A experimental text editor named Jo.
-A experimental text editor named Jo.
-sdfdsf
+# Jo
+
+Jo is a text editor in 1000 lines of code with syntax highlight and search.
