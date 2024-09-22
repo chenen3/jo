@@ -265,17 +265,11 @@ func main() {
 			case tcell.Button1, tcell.Button2:
 				s.editor.SetCursor(x, y)
 			case tcell.WheelUp:
-				deltaY := float32(y)
-				delta := int(deltaY * wheelSensitivity)
-				for i := 0; i < delta; i++ {
-					s.editor.CursorUp()
-				}
+				delta := int(float32(y) * wheelSensitivity)
+				s.editor.WheelUp(delta)
 			case tcell.WheelDown:
-				deltaY := float32(y)
-				delta := int(deltaY * wheelSensitivity)
-				for i := 0; i < delta; i++ {
-					s.editor.CursorDown()
-				}
+				delta := int(float32(y) * wheelSensitivity)
+				s.editor.WheelDown(delta)
 			}
 		case *tcell.EventKey:
 			if s.promptBox != nil {
@@ -712,6 +706,26 @@ func (e *editor) CursorLineEnd() {
 	e.ShowCursor()
 }
 
+func (e *editor) WheelUp(delta int) {
+	e.startLine -= delta
+	if e.startLine < 1 {
+		e.startLine = 1
+	} else if e.startLine > len(e.buf) {
+		e.startLine = len(e.buf)
+	}
+	e.draw()
+}
+
+func (e *editor) WheelDown(delta int) {
+	e.startLine += delta
+	if e.startLine < 1 {
+		e.startLine = 1
+	} else if e.startLine > len(e.buf) {
+		e.startLine = len(e.buf)
+	}
+	e.draw()
+}
+
 func (e *editor) Insert(r rune) {
 	line := e.buf[e.row-1]
 	rs := make([]rune, len(line[e.col-1:]))
@@ -720,7 +734,6 @@ func (e *editor) Insert(r rune) {
 	e.buf[e.row-1] = line
 	e.drawLine(e.row)
 	e.CursorRight()
-	e.ShowCursor()
 	e.dirty = true
 }
 
