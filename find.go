@@ -3,67 +3,75 @@ package main
 import "github.com/gdamore/tcell/v2"
 
 type findBar struct {
-	s        tcell.Screen
-	row, col int // cursor position when starting search
-
-	x1, y1  int
-	x2, y2  int
-	keyword []rune
-	match   [][2]int // [][2]int{lineIndex, columnIndex}
-	i       int      // index of the matching result
-	cx, cy  int      // cursor position
+	jo               *Jo
+	keyword          []rune
+	x1, y1           int
+	x2, y2           int
+	cursorX, cursorY int
 }
 
-func newFindBar(s tcell.Screen, row, col int) *findBar {
-	return &findBar{s: s, row: row, col: col}
+func newFindBar(j *Jo) *findBar {
+	return &findBar{jo: j}
 }
 
-var findBarStyle = tcell.StyleDefault.Background(tcell.ColorLightYellow).Foreground(tcell.ColorBlack)
-
-func (f *findBar) draw() {
-	width, _ := f.s.Size()
-	// align right
-	f.x1, f.y1 = width-30, 1
-	f.x2, f.y2 = width-1, 1
+func (f *findBar) Draw() {
+	style := tcell.StyleDefault.Background(tcell.ColorLightYellow).Foreground(tcell.ColorBlack)
+	width, height := f.jo.Size()
+	f.x1, f.y1 = 0, height-1
+	f.x2, f.y2 = width-1, height-1
 	for y := f.y1; y <= f.y2; y++ {
 		for x := f.x1; x <= f.x2; x++ {
-			f.s.SetContent(x, y, ' ', nil, findBarStyle)
+			f.jo.SetContent(x, y, ' ', nil, style)
 		}
 	}
 
-	s := "search:" + string(f.keyword)
+	s := "find:" + string(f.keyword)
 	for i, c := range s {
-		f.s.SetContent(f.x1+i, f.y1, c, nil, findBarStyle)
+		f.jo.SetContent(f.x1+i, f.y1, c, nil, style)
 	}
-	f.cx, f.cy = f.x1+len(s), f.y1
-	f.s.ShowCursor(f.cx, f.cy)
+	f.cursorX, f.cursorY = f.x1+len(s), f.y1
+
+	keymap := "[enter] next | [ctrl+n] next | [ctrl+p] previous | [esc] cancel"
+	for i, c := range keymap {
+		if f.x1+i > f.x2 {
+			break
+		}
+		// align right
+		f.jo.SetContent(f.x2-len(keymap)+i, f.y1, c, nil, style)
+	}
 }
 
-func (f *findBar) insert(r rune) {
-	f.keyword = append(f.keyword, r)
+func (f *findBar) Position() (x1, y1, x2, y2 int) { return f.x1, f.y1, f.x2, f.y2 }
+
+func (f *findBar) Update(_ string) {}
+
+func (f *findBar) ShowCursor() {
+	f.jo.ShowCursor(f.cursorX, f.cursorY)
 }
 
-func (f *findBar) deleteLeft() {
-	if len(f.keyword) == 0 {
+func (f *findBar) HandleEvent(ev tcell.Event) {
+	k, ok := ev.(*tcell.EventKey)
+	if !ok {
 		return
 	}
-	f.keyword = f.keyword[:len(f.keyword)-1]
-}
-
-func (f *findBar) next() (int, int) {
-	if f.i == len(f.match)-1 {
-		f.i = 0
-	} else {
-		f.i++
+	switch k.Key() {
+	case tcell.KeyRune:
+		f.keyword = append(f.keyword, k.Rune())
+		f.jo.editor.Find(string(f.keyword))
+	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		if len(f.keyword) == 0 {
+			return
+		}
+		f.keyword = f.keyword[:len(f.keyword)-1]
+		f.jo.editor.Find(string(f.keyword))
+	case tcell.KeyEnter, tcell.KeyCtrlN:
+		f.jo.editor.FindNext()
+	case tcell.KeyCtrlP:
+		f.jo.editor.FindPrev()
+	case tcell.KeyESC:
+		f.jo.editor.ClearFind()
+		f.jo.editor.Draw()
+		f.jo.statusBar = newStatusBar(f.jo.Screen)
+		f.jo.focus = f.jo.editor
 	}
-	return f.match[f.i][0], f.match[f.i][1]
-}
-
-func (f *findBar) prev() (int, int) {
-	if f.i == 0 {
-		f.i = len(f.match) - 1
-	} else {
-		f.i--
-	}
-	return f.match[f.i][0], f.match[f.i][1]
 }
