@@ -158,6 +158,18 @@ func main() {
 				j.focus = j.statusBar
 				break
 			}
+			if ev.Key() == tcell.KeyCtrlP {
+				if _, ok := j.statusBar.(*gotoBar); !ok {
+					j.statusBar = newGotoBar(j)
+				}
+				j.focus = j.statusBar
+				break
+			}
+			if ev.Key() == tcell.KeyCtrlG {
+				j.statusBar = &gotoBar{jo: j, keyword: []rune{':'}} // TODO
+				j.focus = j.statusBar
+				break
+			}
 		case *tcell.EventMouse:
 			if ev.Buttons() == tcell.Button1 {
 				x, y := ev.Position()

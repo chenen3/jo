@@ -47,7 +47,7 @@ func (f *findBar) Draw() {
 		}
 	}
 
-	keymap := "[ctrl+n] next | [ctrl+p] previous | [esc] cancel"
+	keymap := "[down] next | [up] previous | [esc] cancel"
 	for i, c := range keymap {
 		// align right
 		x := f.x2 - len(keymap) + i
@@ -79,9 +79,9 @@ func (f *findBar) HandleEvent(ev tcell.Event) {
 		}
 		f.keyword = f.keyword[:len(f.keyword)-1]
 		f.jo.editor.Find(string(f.keyword))
-	case tcell.KeyEnter, tcell.KeyCtrlN:
+	case tcell.KeyEnter, tcell.KeyDown:
 		f.jo.editor.FindNext()
-	case tcell.KeyCtrlP:
+	case tcell.KeyUp:
 		f.jo.editor.FindPrev()
 	case tcell.KeyESC:
 		f.jo.editor.ClearFind()
