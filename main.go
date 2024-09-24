@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 
@@ -12,7 +11,6 @@ type View interface {
 	Position() (x1, y1, x2, y2 int)
 	Draw()
 	HandleEvent(tcell.Event)
-	Update(s string)
 	ShowCursor()
 }
 
@@ -112,11 +110,11 @@ func main() {
 	}
 	j.editor = editor
 	j.editor.Draw()
-	j.focus = j.editor
 
-	j.statusBar = newStatusBar(j.Screen)
+	j.statusBar = newStatusBar(j)
 	j.statusBar.Draw()
 
+	j.focus = j.editor
 	for {
 		select {
 		case <-j.done:
@@ -124,7 +122,6 @@ func main() {
 		default:
 		}
 
-		j.statusBar.Update(fmt.Sprintf("line %d, column %d", j.editor.Row(), j.editor.Col()))
 		j.statusBar.Draw()
 		j.focus.ShowCursor()
 		j.Show()
@@ -148,12 +145,16 @@ func main() {
 				return
 			}
 			if ev.Key() == tcell.KeyCtrlF {
-				j.statusBar = newFindBar(j)
+				if _, ok := j.statusBar.(*findBar); !ok {
+					j.statusBar = newFindBar(j)
+				}
 				j.focus = j.statusBar
 				break
 			}
 			if ev.Key() == tcell.KeyCtrlS {
-				j.statusBar = newSaveBar(j, false)
+				if _, ok := j.statusBar.(*saveBar); !ok {
+					j.statusBar = newSaveBar(j, false)
+				}
 				j.focus = j.statusBar
 				break
 			}

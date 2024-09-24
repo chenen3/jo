@@ -10,12 +10,12 @@ import (
 )
 
 type editor struct {
+	jo     *Jo
 	x1, y1 int
 	x2, y2 int
-	screen tcell.Screen
 	style  tcell.Style
 
-	// editable buffer
+	// editing area
 	bx1, by1 int
 	bx2, by2 int
 	buf      [][]rune
@@ -38,10 +38,10 @@ func (e *editor) ClearFind() {
 }
 
 // It is not efficient to accept src in bytes, but it is acceptable.
-func newEditor(s tcell.Screen, src []byte) (*editor, error) {
+func newEditor(j *Jo, src []byte) (*editor, error) {
 	style := tcell.StyleDefault.Background(tcell.ColorWhite).Foreground(tcell.ColorBlack)
 	e := &editor{
-		screen:    s,
+		jo:        j,
 		style:     style,
 		startLine: 1,
 		row:       1,
@@ -59,7 +59,7 @@ func newEditor(s tcell.Screen, src []byte) (*editor, error) {
 	}
 
 	e.lineBar = &lineBar{
-		s:     s,
+		s:     j,
 		style: style.Foreground(tcell.ColorGray),
 	}
 	return e, nil
@@ -88,7 +88,7 @@ func (e *editor) drawLine(row int) {
 		if x <= e.bx1+len(line)-1 {
 			continue
 		}
-		e.screen.SetContent(x, e.by1+row-e.startLine, ' ', nil, e.style)
+		e.jo.SetContent(x, e.by1+row-e.startLine, ' ', nil, e.style)
 	}
 
 	if len(line) == 0 {
@@ -128,13 +128,13 @@ func (e *editor) drawLine(row int) {
 			}
 		}
 
-		e.screen.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, line[j], nil, style)
+		e.jo.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, line[j], nil, style)
 		if j < tabs {
 			// consider showing tab as '|' for debugging
-			e.screen.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, ' ', nil, e.style.Foreground(tcell.ColorGray))
+			e.jo.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, ' ', nil, e.style.Foreground(tcell.ColorGray))
 			for k := 0; k < tabWidth-1; k++ {
 				padding++
-				e.screen.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, ' ', nil, e.style.Foreground(tcell.ColorGray))
+				e.jo.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, ' ', nil, e.style.Foreground(tcell.ColorGray))
 			}
 		}
 	}
@@ -143,7 +143,7 @@ func (e *editor) drawLine(row int) {
 func (e *editor) Draw() {
 	e.x1 = 0
 	e.y1 = 1
-	width, height := e.screen.Size()
+	width, height := e.jo.Size()
 	e.x2 = width - 1
 	e.y2 = height - 2
 
@@ -171,7 +171,7 @@ func (e *editor) Draw() {
 
 	for y := e.by1; y <= e.by2; y++ {
 		for x := e.bx1; x <= e.bx2; x++ {
-			e.screen.SetContent(x, y, ' ', nil, e.style)
+			e.jo.SetContent(x, y, ' ', nil, e.style)
 		}
 	}
 
@@ -270,7 +270,7 @@ func (e *editor) ShowCursor() {
 		x = e.bx1 + e.col + padding - 1
 	}
 
-	e.screen.ShowCursor(x, e.by1+e.row-e.startLine)
+	e.jo.ShowCursor(x, e.by1+e.row-e.startLine)
 }
 
 func (e *editor) CursorUp() {
@@ -315,32 +315,34 @@ func (e *editor) CursorRight() {
 }
 
 func (e *editor) CursorLineStart() {
+	if e.col == 1 {
+		return
+	}
 	e.col = 1
 	e.ShowCursor()
 }
 
 func (e *editor) CursorLineEnd() {
+	if e.col == len(e.buf[e.row-1])+1 {
+		return
+	}
 	e.cursorColAdd(len(e.buf[e.row-1]) - e.col + 1)
 	e.ShowCursor()
 }
 
 func (e *editor) WheelUp(delta int) {
-	e.startLine -= delta
-	if e.startLine < 1 {
-		e.startLine = 1
-	} else if e.startLine > len(e.buf) {
-		e.startLine = len(e.buf)
+	if e.startLine <= 1 {
+		return
 	}
+	e.startLine -= delta
 	e.Draw()
 }
 
 func (e *editor) WheelDown(delta int) {
-	e.startLine += delta
-	if e.startLine < 1 {
-		e.startLine = 1
-	} else if e.startLine > len(e.buf) {
-		e.startLine = len(e.buf)
+	if e.startLine >= len(e.buf)-e.height() {
+		return
 	}
+	e.startLine += delta
 	e.Draw()
 }
 
@@ -596,11 +598,18 @@ func (e *editor) HandleEvent(ev tcell.Event) {
 			e.DeleteToLineStart()
 		case tcell.KeyCtrlK:
 			e.DeleteToLineEnd()
+		case tcell.KeyESC:
+			if _, ok := e.jo.statusBar.(*findBar); ok {
+				e.ClearFind()
+				e.Draw()
+			}
+			if _, ok := e.jo.statusBar.(*statusBar); !ok {
+				e.jo.statusBar = newStatusBar(e.jo)
+			}
 		}
 	}
 }
 
-func (e *editor) Update(_ string)                {}
 func (e *editor) Position() (x1, y1, x2, y2 int) { return e.x1, e.y1, e.x2, e.y2 }
 
 type lineBar struct {

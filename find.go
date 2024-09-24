@@ -1,6 +1,10 @@
 package main
 
-import "github.com/gdamore/tcell/v2"
+import (
+	"fmt"
+
+	"github.com/gdamore/tcell/v2"
+)
 
 type findBar struct {
 	jo               *Jo
@@ -31,19 +35,30 @@ func (f *findBar) Draw() {
 	}
 	f.cursorX, f.cursorY = f.x1+len(s), f.y1
 
-	keymap := "[enter] next | [ctrl+n] next | [ctrl+p] previous | [esc] cancel"
+	if len(f.jo.editor.findMatch) > 0 {
+		index := fmt.Sprintf("%d/%d", f.jo.editor.findIndex+1, len(f.jo.editor.findMatch))
+		for i, c := range index {
+			// align center
+			x := (f.x2-f.x1-len(index))/2 + i
+			if f.x2 < x || x <= f.cursorX {
+				break
+			}
+			f.jo.SetContent(x, f.y1, c, nil, style)
+		}
+	}
+
+	keymap := "[ctrl+n] next | [ctrl+p] previous | [esc] cancel"
 	for i, c := range keymap {
-		if f.x1+i > f.x2 {
+		// align right
+		x := f.x2 - len(keymap) + i
+		if f.x2 < x || x <= f.cursorX {
 			break
 		}
-		// align right
-		f.jo.SetContent(f.x2-len(keymap)+i, f.y1, c, nil, style)
+		f.jo.SetContent(x, f.y1, c, nil, style)
 	}
 }
 
 func (f *findBar) Position() (x1, y1, x2, y2 int) { return f.x1, f.y1, f.x2, f.y2 }
-
-func (f *findBar) Update(_ string) {}
 
 func (f *findBar) ShowCursor() {
 	f.jo.ShowCursor(f.cursorX, f.cursorY)
@@ -71,7 +86,7 @@ func (f *findBar) HandleEvent(ev tcell.Event) {
 	case tcell.KeyESC:
 		f.jo.editor.ClearFind()
 		f.jo.editor.Draw()
-		f.jo.statusBar = newStatusBar(f.jo.Screen)
+		f.jo.statusBar = newStatusBar(f.jo)
 		f.jo.focus = f.jo.editor
 	}
 }
