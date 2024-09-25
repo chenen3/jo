@@ -577,9 +577,9 @@ func (e *editor) HandleEvent(ev tcell.Event) {
 		case tcell.KeyPgDn:
 			e.scrollDown(e.PageSize() - 1)
 			e.cursorRowAdd(e.PageSize() - 1)
-		case tcell.KeyHome, tcell.KeyCtrlA:
+		case tcell.KeyHome:
 			e.cursorLineStart()
-		case tcell.KeyEnd, tcell.KeyCtrlE:
+		case tcell.KeyEnd:
 			e.cursorLineEnd()
 		case tcell.KeyUp:
 			e.cursorUp()

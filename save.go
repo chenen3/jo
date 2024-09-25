@@ -37,16 +37,28 @@ func (s *saveBar) Draw() {
 	if s.jo.filename == "" {
 		prompt = "save as:"
 	}
-	if s.quit {
-		prompt = "quit and " + prompt
-	}
-	str := prompt + string(s.filename)
-	for i, c := range str {
-		s.jo.SetContent(s.x1+i, s.y1, c, nil, style)
-	}
-	s.cursorX, s.cursorY = s.x1+len(str), s.y1
 
-	keymap := "[enter] save | [esc] cancel | [ctrl+q] discard"
+	s.cursorX, s.cursorY = s.x1, s.y1
+	for _, c := range prompt {
+		s.jo.SetContent(s.cursorX, s.cursorY, c, nil, style)
+		s.cursorX++
+	}
+
+	if s.jo.filename == "" && len(s.filename) == 0 {
+		placeholder := "file name"
+		for i, c := range placeholder {
+			s.jo.SetContent(s.cursorX+i, s.cursorY, c, nil, style.Foreground(tcell.ColorGray))
+		}
+	}
+
+	if s.jo.filename == "" && len(s.filename) != 0 {
+		for _, c := range s.filename {
+			s.jo.SetContent(s.cursorX, s.cursorY, c, nil, style)
+			s.cursorX++
+		}
+	}
+
+	keymap := "[enter]save | [esc]cancel | [ctrl+q]discard"
 	for i, c := range keymap {
 		if s.x1+i > s.x2 {
 			break
@@ -74,14 +86,14 @@ func (s *saveBar) HandleEvent(ev tcell.Event) {
 			return
 		}
 		s.filename = append(s.filename, k.Rune())
-	case tcell.KeyEnter:
+	case tcell.KeyCtrlS, tcell.KeyEnter:
 		var filename string
 		if s.jo.filename != "" {
 			filename = s.jo.filename
 		} else if len(s.filename) != 0 {
 			filename = string(s.filename)
 		} else {
-			logger.Print("empty filename")
+			// logger.Print("empty filename")
 			return
 		}
 
@@ -101,7 +113,9 @@ func (s *saveBar) HandleEvent(ev tcell.Event) {
 			close(s.jo.done)
 			return
 		}
-		s.jo.filename = filename
+		if s.jo.filename == "" {
+			s.jo.filename = filename
+		}
 		s.jo.statusBar = newStatusBar(s.jo)
 		s.jo.focus = s.jo.editor
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
