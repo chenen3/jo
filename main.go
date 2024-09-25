@@ -36,7 +36,7 @@ func (t *titleBar) Draw() {
 	width, _ := t.jo.Size()
 	t.x2 = width - 1
 	t.y2 = 0
-	style := tcell.StyleDefault.Background(tcell.ColorGray).Foreground(tcell.ColorWhite)
+	style := tcell.StyleDefault.Background(tcell.ColorLightGray).Foreground(tcell.ColorBlack)
 	for y := t.y1; y <= t.y2; y++ {
 		for x := t.x1; x <= t.x2; x++ {
 			t.jo.SetContent(x, y, ' ', nil, style)
@@ -66,24 +66,24 @@ func main() {
 	defer tmp.Close()
 	logger = log.New(tmp, "", log.LstdFlags|log.Lshortfile)
 
-	tc, err := tcell.NewScreen()
+	screen, err := tcell.NewScreen()
 	if err != nil {
 		logger.Print(err)
 		return
 	}
-	if err = tc.Init(); err != nil {
+	if err = screen.Init(); err != nil {
 		logger.Print(err)
 		return
 	}
-	tc.SetStyle(tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset))
-	tc.EnableMouse()
-	tc.SetCursorStyle(tcell.CursorStyleBlinkingBlock)
-	tc.EnablePaste()
-	tc.Clear()
-	defer tc.Fini()
+	screen.SetStyle(tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset))
+	screen.EnableMouse()
+	screen.SetCursorStyle(tcell.CursorStyleBlinkingBlock)
+	screen.EnablePaste()
+	screen.Clear()
+	defer screen.Fini()
 
 	j := &Jo{
-		Screen: tc,
+		Screen: screen,
 		done:   make(chan struct{}),
 	}
 

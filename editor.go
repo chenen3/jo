@@ -39,7 +39,7 @@ func (e *editor) ClearFind() {
 
 // It is not efficient to accept src in bytes, but it is acceptable.
 func newEditor(j *Jo, src []byte) (*editor, error) {
-	style := tcell.StyleDefault.Background(tcell.ColorWhite).Foreground(tcell.ColorBlack)
+	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	e := &editor{
 		jo:        j,
 		style:     style,
@@ -331,18 +331,26 @@ func (e *editor) CursorLineEnd() {
 }
 
 func (e *editor) WheelUp(delta int) {
-	if e.startLine <= 1 {
+	if e.startLine == 1 {
 		return
 	}
-	e.startLine -= delta
+	if e.startLine-delta < 1 {
+		e.startLine = 1
+	} else {
+		e.startLine -= delta
+	}
 	e.Draw()
 }
 
 func (e *editor) WheelDown(delta int) {
-	if e.startLine >= len(e.buf)-e.height() {
+	if e.startLine == len(e.buf)-e.height()+1 {
 		return
 	}
-	e.startLine += delta
+	if e.startLine > len(e.buf)-e.height()+1 {
+		e.startLine = len(e.buf) - e.height() + 1
+	} else {
+		e.startLine += delta
+	}
 	e.Draw()
 }
 

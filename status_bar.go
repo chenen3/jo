@@ -15,7 +15,7 @@ type statusBar struct {
 func newStatusBar(j *Jo) *statusBar { return &statusBar{jo: j} }
 
 func (b *statusBar) Draw() {
-	style := tcell.StyleDefault.Background(tcell.ColorGray).Foreground(tcell.ColorWhite)
+	style := tcell.StyleDefault.Background(tcell.ColorLightGray).Foreground(tcell.ColorBlack)
 	width, height := b.jo.Size()
 	b.x1, b.y1 = 0, height-1
 	b.x2, b.y2 = width-1, height-1

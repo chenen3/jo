@@ -28,15 +28,15 @@ var (
 	}
 	tokenTypes     = []string{"nil", "int", "string", "rune", "map"}
 	tokenOperators = []string{"=", "+", "-", "*", "/", ">", "<", "|", "&", "!"}
-	defaultColor   = tcell.ColorBlack
+	defaultColor   = tcell.ColorReset
 	colors         = map[string]tcell.Color{
-		tcKeyword:     tcell.ColorPurple,
-		tcType:        tcell.ColorBlue,
-		tcOperator:    tcell.ColorBrown,
-		tcIntLiteral:  tcell.ColorBrown,
-		tcRuneLiteral: tcell.ColorPurple,
-		tcStrLiteral:  tcell.ColorGreen,
-		tcCall:        tcell.ColorBlue,
+		tcKeyword:     tcell.ColorDarkRed,
+		tcType:        tcell.ColorDarkRed,
+		tcOperator:    tcell.ColorDarkRed,
+		tcIntLiteral:  tcell.ColorRoyalBlue,
+		tcRuneLiteral: tcell.ColorRoyalBlue,
+		tcStrLiteral:  tcell.ColorRebeccaPurple,
+		tcCall:        tcell.ColorRoyalBlue,
 		tcComment:     tcell.ColorGray,
 	}
 )
