@@ -31,7 +31,7 @@ func (b *statusBar) Draw() {
 		b.jo.SetContent(b.x1+i, b.y1, c, nil, style)
 	}
 
-	text := "[ctrl+f] find | [ctrl+s] save | [ctrl+q] quit"
+	text := "[ctrl+p]goto | [ctrl+f]find | [ctrl+s]save | [ctrl+q]quit"
 	for i, c := range text {
 		if b.x1+i > b.x2 {
 			break
@@ -43,5 +43,6 @@ func (b *statusBar) Draw() {
 
 func (b *statusBar) HandleEvent(_ tcell.Event) { b.jo.HideCursor() }
 
-func (b *statusBar) Position() (x1, y1, x2, y2 int) { return b.x1, b.y1, b.x2, b.y2 }
-func (b *statusBar) ShowCursor()                    {}
+func (b *statusBar) Range() (x1, y1, x2, y2 int) { return b.x1, b.y1, b.x2, b.y2 }
+func (b *statusBar) ShowCursor()                 {}
+func (b *statusBar) LostFocus()                  {}

@@ -14,10 +14,6 @@ type gotoBar struct {
 	cursorX, cursorY int
 }
 
-// TODO
-// goto :line
-// goto filename
-// goto @symbol
 func newGotoBar(j *Jo) *gotoBar { return &gotoBar{jo: j} }
 
 func (g *gotoBar) Draw() {
@@ -30,15 +26,27 @@ func (g *gotoBar) Draw() {
 			g.jo.SetContent(x, y, ' ', nil, style)
 		}
 	}
+	g.cursorX = g.x1
+	g.cursorY = g.y1
 
-	s := "goto " + string(g.keyword)
-	for i, c := range s {
-		g.jo.SetContent(g.x1+i, g.y1, c, nil, style)
+	s := "goto "
+	for _, c := range s {
+		g.jo.SetContent(g.cursorX, g.y1, c, nil, style)
+		g.cursorX++
 	}
-	g.cursorX, g.cursorY = g.x1+len(s), g.y1
+	if len(g.keyword) == 0 {
+		placeholder := "filename (append : to go to line or @ to go to symbol)"
+		for i, c := range placeholder {
+			g.jo.SetContent(g.cursorX+i, g.y1, c, nil, style.Foreground(tcell.ColorGray))
+		}
+	}
+	for _, c := range g.keyword {
+		g.jo.SetContent(g.cursorX, g.y1, c, nil, style)
+		g.cursorX++
+	}
 }
 
-func (g *gotoBar) Position() (x1, y1, x2, y2 int) { return g.x1, g.y1, g.x2, g.y2 }
+func (g *gotoBar) Range() (x1, y1, x2, y2 int) { return g.x1, g.y1, g.x2, g.y2 }
 
 func (g *gotoBar) ShowCursor() {
 	g.jo.ShowCursor(g.cursorX, g.cursorY)
@@ -70,10 +78,10 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 			}
 			g.jo.editor.row = line
 			g.jo.editor.col = 1
-			if line <= g.jo.editor.height()/2 {
+			if line <= g.jo.editor.PageSize()/2 {
 				g.jo.editor.startLine = 1
 			} else {
-				g.jo.editor.startLine = line - g.jo.editor.height()/2
+				g.jo.editor.startLine = line - g.jo.editor.PageSize()/2
 			}
 			g.jo.editor.Draw()
 			g.jo.focus = g.jo.editor
@@ -85,4 +93,8 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 		g.jo.statusBar = newStatusBar(g.jo)
 		g.jo.focus = g.jo.editor
 	}
+}
+
+func (g *gotoBar) LostFocus() {
+	g.jo.statusBar = newStatusBar(g.jo)
 }

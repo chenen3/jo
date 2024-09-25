@@ -8,10 +8,11 @@ import (
 )
 
 type View interface {
-	Position() (x1, y1, x2, y2 int)
+	Range() (x1, y1, x2, y2 int)
 	Draw()
 	HandleEvent(tcell.Event)
 	ShowCursor()
+	LostFocus()
 }
 
 type Jo struct {
@@ -55,7 +56,7 @@ func (t *titleBar) Draw() {
 var logger *log.Logger
 
 // A multiplier to be used on the deltaX and deltaY of mouse wheel scroll events
-const wheelSensitivity = 0.125
+const wheelScrollSensitivity = 0.125
 
 func main() {
 	tmp, err := os.OpenFile("/tmp/jo.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
@@ -103,12 +104,12 @@ func main() {
 		}
 	}
 
-	editor, err := newEditor(j, src)
+	e, err := newEditor(j, src)
 	if err != nil {
 		logger.Println(err)
 		return
 	}
-	j.editor = editor
+	j.editor = e
 	j.editor.Draw()
 
 	j.statusBar = newStatusBar(j)
@@ -173,14 +174,23 @@ func main() {
 		case *tcell.EventMouse:
 			if ev.Buttons() == tcell.Button1 {
 				x, y := ev.Position()
-				x1, y1, x2, y2 := j.editor.Position()
-				if x1 <= x && x <= x2 && y1 <= y && y <= y2 {
+				if inView(j.editor, x, y) {
+					if _, ok := j.focus.(*editor); ok {
+						break
+					}
+					j.focus.LostFocus()
 					j.focus = j.editor
-				} else {
+				} else if inView(j.statusBar, x, y) {
+					j.focus.LostFocus()
 					j.focus = j.statusBar
 				}
 			}
 		}
 		j.focus.HandleEvent(ev)
 	}
+}
+
+func inView(v View, x, y int) bool {
+	x1, y1, x2, y2 := v.Range()
+	return x1 <= x && x <= x2 && y1 <= y && y <= y2
 }

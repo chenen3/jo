@@ -58,11 +58,13 @@ func (f *findBar) Draw() {
 	}
 }
 
-func (f *findBar) Position() (x1, y1, x2, y2 int) { return f.x1, f.y1, f.x2, f.y2 }
+func (f *findBar) Range() (x1, y1, x2, y2 int) { return f.x1, f.y1, f.x2, f.y2 }
 
 func (f *findBar) ShowCursor() {
 	f.jo.ShowCursor(f.cursorX, f.cursorY)
 }
+
+func (f *findBar) LostFocus() {}
 
 func (f *findBar) HandleEvent(ev tcell.Event) {
 	k, ok := ev.(*tcell.EventKey)

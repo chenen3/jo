@@ -19,8 +19,8 @@ func newSaveBar(j *Jo, quit bool) *saveBar {
 	return &saveBar{jo: j, quit: quit}
 }
 
-func (s *saveBar) Update(string)                  {}
-func (s *saveBar) Position() (int, int, int, int) { return s.x1, s.y1, s.x2, s.y2 }
+func (s *saveBar) Update(string)               {}
+func (s *saveBar) Range() (int, int, int, int) { return s.x1, s.y1, s.x2, s.y2 }
 
 func (s *saveBar) Draw() {
 	style := tcell.StyleDefault.Background(tcell.ColorLightYellow).Foreground(tcell.ColorBlack)
@@ -59,6 +59,8 @@ func (s *saveBar) Draw() {
 func (s *saveBar) ShowCursor() {
 	s.jo.ShowCursor(s.cursorX, s.cursorY)
 }
+
+func (s *saveBar) LostFocus() {}
 
 func (s *saveBar) HandleEvent(ev tcell.Event) {
 	k, ok := ev.(*tcell.EventKey)
