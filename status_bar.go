@@ -26,7 +26,7 @@ func (b *statusBar) Draw() {
 		}
 	}
 
-	s := fmt.Sprintf("line %d, column %d", b.jo.editor.Row(), b.jo.editor.Col())
+	s := fmt.Sprintf("line %d, column %d", b.jo.editor.Line(), b.jo.editor.Column())
 	for i, c := range s {
 		b.jo.SetContent(b.x1+i, b.y1, c, nil, style)
 	}

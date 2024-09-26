@@ -14,10 +14,11 @@ const (
 	tcType        = "type"
 	tcKeyword     = "keyword"
 	tcOperator    = "operator"
-	tcIntLiteral  = "int"
-	tcRuneLiteral = "rune"
-	tcStrLiteral  = "str"
-	tcCall        = "call"
+	tcInt         = "int"
+	tcRune        = "rune"
+	tcString      = "str"
+	tcFunction    = "func"
+	tcFuncBuiltin = "funcbuiltin"
 	tcComment     = "comment"
 )
 
@@ -27,16 +28,21 @@ var (
 		'-', '+', '*', '&', '|', '=', '!', ':', '<', '>',
 	}
 	tokenTypes     = []string{"nil", "int", "string", "rune", "map"}
-	tokenOperators = []string{"=", "+", "-", "*", "/", ">", "<", "|", "&", "!"}
-	defaultColor   = tcell.ColorReset
-	colors         = map[string]tcell.Color{
+	tokenOperators = []string{"=", "+", "-", "*", "/", ">", "<", "|", "&", "!", ":"}
+	tokenFunctions = []string{
+		"append", "cap", "clear", "close", "copy", "delete", "len", "make",
+		"max", "min", "new", "panic", "print", "println", "recover",
+	}
+	defaultColor = tcell.ColorReset
+	colors       = map[string]tcell.Color{
 		tcKeyword:     tcell.ColorDarkRed,
 		tcType:        tcell.ColorDarkRed,
 		tcOperator:    tcell.ColorDarkRed,
-		tcIntLiteral:  tcell.ColorRoyalBlue,
-		tcRuneLiteral: tcell.ColorRoyalBlue,
-		tcStrLiteral:  tcell.ColorRebeccaPurple,
-		tcCall:        tcell.ColorRoyalBlue,
+		tcInt:         tcell.ColorRoyalBlue,
+		tcRune:        tcell.ColorRoyalBlue,
+		tcString:      tcell.ColorRebeccaPurple,
+		tcFunction:    tcell.ColorDarkGreen,
+		tcFuncBuiltin: tcell.ColorRebeccaPurple,
 		tcComment:     tcell.ColorGray,
 	}
 )
@@ -65,13 +71,17 @@ func parseToken(line []rune) []tokenInfo {
 		tokenS := string(token)
 		var class string
 		if delim == '(' {
-			class = tcCall
+			if slices.Contains(tokenFunctions, tokenS) {
+				class = tcFuncBuiltin
+			} else {
+				class = tcFunction
+			}
 		} else if gotoken.IsKeyword(tokenS) {
 			class = tcKeyword
 		} else if slices.Contains(tokenTypes, tokenS) {
 			class = tcType
 		} else if _, err := strconv.Atoi(tokenS); err == nil {
-			class = tcIntLiteral
+			class = tcInt
 		} else if slices.Contains(tokenOperators, tokenS) {
 			class = tcOperator
 		}
@@ -86,9 +96,9 @@ func parseToken(line []rune) []tokenInfo {
 			// find the next unescaped quote
 			if line[i] == lastDelim && line[i-1] != '\\' {
 				if lastDelim == '\'' {
-					s[len(s)-1].class = tcRuneLiteral
+					s[len(s)-1].class = tcRune
 				} else {
-					s[len(s)-1].class = tcStrLiteral
+					s[len(s)-1].class = tcString
 				}
 				s[len(s)-1].len = i - s[len(s)-1].off + 1
 				lastDelim = 0

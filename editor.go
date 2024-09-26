@@ -15,21 +15,21 @@ type editor struct {
 	x2, y2 int
 	style  tcell.Style
 
-	// editing area
+	// editing buffer
+	buf      [][]rune
 	bx1, by1 int
 	bx2, by2 int
-	buf      [][]rune
-	row      int // current number of line in buffer
-	col      int // current number of column in buffer
+	row      int // line number, starting at 1
+	col      int // column number, starting at 1
 	dirty    bool
 
 	lineBar   *lineBar
-	startLine int
+	startLine int // starting line number
 
 	findKey   string
-	findRow   int // cursor position when starting to find
+	findRow   int // line number when starting to find
 	findMatch [][2]int
-	findIndex int
+	findIndex int // index of the matching result
 }
 
 func (e *editor) ClearFind() {
@@ -343,7 +343,7 @@ func (e *editor) scrollDown(delta int) {
 	e.Draw()
 }
 
-func (e *editor) insert(r rune) {
+func (e *editor) write(r rune) {
 	line := e.buf[e.row-1]
 	rs := make([]rune, len(line[e.col-1:]))
 	copy(rs, line[e.col-1:])
@@ -354,15 +354,15 @@ func (e *editor) insert(r rune) {
 	e.dirty = true
 }
 
-// Row return current number of line in editor
-func (e *editor) Row() int {
+// Line return current line number in editor
+func (e *editor) Line() int {
 	return e.row
 }
 
-// Col return current number of column in editor,
-// it is intended for the line number of status line.
-// Note that it is different from e.col.
-func (e *editor) Col() int {
+// Column return current column number in editor.
+// Note that it is intended for the statusBar,
+// instead of editor buffer.
+func (e *editor) Column() int {
 	var col int
 	tabs := leadingTabs(e.buf[e.row-1])
 	if e.col <= tabs {
@@ -376,7 +376,7 @@ func (e *editor) Col() int {
 
 func (e *editor) deleteLeft() {
 	e.dirty = true
-	// cursor at the head of line, merge the line to previous one
+	// cursor at line start, merge the line to previous one
 	if e.col == 1 {
 		if e.row == 1 {
 			return
@@ -396,7 +396,7 @@ func (e *editor) deleteLeft() {
 		// line end
 		line = line[:e.col-2]
 	} else {
-		// TODO: consider the new function slices.Delete ?
+		// TODO: maybe slices.Delete ?
 		line = append(line[:e.col-2], line[e.col-1:]...)
 	}
 	e.buf[e.row-1] = line
@@ -590,9 +590,9 @@ func (e *editor) HandleEvent(ev tcell.Event) {
 		case tcell.KeyRight:
 			e.cursorColAdd(1)
 		case tcell.KeyRune:
-			e.insert(ev.Rune())
+			e.write(ev.Rune())
 		case tcell.KeyTab:
-			e.insert('\t')
+			e.write('\t')
 		case tcell.KeyEnter:
 			e.enter()
 		case tcell.KeyBackspace, tcell.KeyBackspace2:

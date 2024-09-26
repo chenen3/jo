@@ -2,6 +2,7 @@ package main
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/gdamore/tcell/v2"
 )
@@ -60,11 +61,30 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 	switch k.Key() {
 	case tcell.KeyRune:
 		g.keyword = append(g.keyword, k.Rune())
+		if g.keyword[0] == ':' {
+			return
+		}
+		if g.keyword[0] == '@' {
+			// TODO
+			return
+		}
+		logger.Print(findFile(string(g.keyword)))
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		if len(g.keyword) == 0 {
 			return
 		}
 		g.keyword = g.keyword[:len(g.keyword)-1]
+		if len(g.keyword) == 0 {
+			return
+		}
+		if g.keyword[0] == ':' {
+			return
+		}
+		if g.keyword[0] == '@' {
+			// TODO
+			return
+		}
+		logger.Print(findFile(string(g.keyword)))
 	case tcell.KeyEnter:
 		if len(g.keyword) > 1 && g.keyword[0] == ':' {
 			line, err := strconv.Atoi(string(g.keyword[1:]))
@@ -86,6 +106,7 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 			g.jo.editor.Draw()
 			g.jo.focus = g.jo.editor
 			g.jo.statusBar = newStatusBar(g.jo)
+			return
 		}
 	case tcell.KeyUp:
 	case tcell.KeyDown:
@@ -97,4 +118,25 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 
 func (g *gotoBar) LostFocus() {
 	g.jo.statusBar = newStatusBar(g.jo)
+}
+
+var recentFiles []string
+var projectFiles []string
+
+func findFile(name string) []string {
+	if len(projectFiles) == 0 {
+		// TODO
+		projectFiles = append(projectFiles, "README.txt", "token.go")
+	}
+	if name == "" {
+		return projectFiles
+	}
+
+	var s []string
+	for _, f := range projectFiles {
+		if strings.Contains(strings.ToLower(f), name) {
+			s = append(s, f)
+		}
+	}
+	return s
 }
