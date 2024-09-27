@@ -11,7 +11,6 @@ import (
 )
 
 type editor struct {
-	jo     *Jo
 	x1, y1 int
 	x2, y2 int
 	style  tcell.Style
@@ -39,17 +38,22 @@ func (e *editor) ClearFind() {
 	e.findMatch = nil
 }
 
+func (e *editor) SetPos(x, y, width, height int) {
+	e.x1 = x
+	e.y1 = y
+	e.x2 = x + width - 1
+	e.y2 = y + height - 1
+}
+
 func newEditor(j *Jo, filename string) *editor {
 	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	e := &editor{
-		jo:        j,
 		style:     style,
 		startLine: 1,
 		line:      1,
 		column:    1,
 		filename:  filename,
 		lineBar: &lineBar{
-			s:     j,
 			style: style.Foreground(tcell.ColorGray),
 		},
 	}
@@ -90,13 +94,13 @@ func leadingTabs(line []rune) int {
 	return n
 }
 
-func (e *editor) drawLine(line int) {
+func (e *editor) renderLine(line int) {
 	text := e.buf[line-1]
 	for x := e.bx1; x <= e.bx2; x++ {
 		if x <= e.bx1+len(text)-1 {
 			continue
 		}
-		e.jo.SetContent(x, e.by1+line-e.startLine, ' ', nil, e.style)
+		screen.SetContent(x, e.by1+line-e.startLine, ' ', nil, e.style)
 	}
 
 	if len(text) == 0 {
@@ -137,25 +141,19 @@ func (e *editor) drawLine(line int) {
 			}
 		}
 
-		e.jo.SetContent(e.bx1+padding+j, e.by1+line-e.startLine, text[j], nil, style)
+		screen.SetContent(e.bx1+padding+j, e.by1+line-e.startLine, text[j], nil, style)
 		if j < tabs {
 			// consider showing tab as '|' for debugging
-			e.jo.SetContent(e.bx1+padding+j, e.by1+line-e.startLine, ' ', nil, e.style.Foreground(tcell.ColorGray))
+			screen.SetContent(e.bx1+padding+j, e.by1+line-e.startLine, ' ', nil, e.style.Foreground(tcell.ColorGray))
 			for k := 0; k < tabWidth-1; k++ {
 				padding++
-				e.jo.SetContent(e.bx1+padding+j, e.by1+line-e.startLine, ' ', nil, e.style.Foreground(tcell.ColorGray))
+				screen.SetContent(e.bx1+padding+j, e.by1+line-e.startLine, ' ', nil, e.style.Foreground(tcell.ColorGray))
 			}
 		}
 	}
 }
 
-func (e *editor) Draw() {
-	e.x1 = 0
-	e.y1 = 1
-	width, height := e.jo.Size()
-	e.x2 = width - 1
-	e.y2 = height - 2
-
+func (e *editor) Render() {
 	lineBarWidth := 2
 	for i := len(e.buf); i > 0; i = i / 10 {
 		lineBarWidth++
@@ -176,11 +174,11 @@ func (e *editor) Draw() {
 		endLine = len(e.buf)
 	}
 	e.lineBar.endLine = endLine
-	e.lineBar.draw()
+	e.lineBar.render()
 
 	for y := e.by1; y <= e.by2; y++ {
 		for x := e.bx1; x <= e.bx2; x++ {
-			e.jo.SetContent(x, y, ' ', nil, e.style)
+			screen.SetContent(x, y, ' ', nil, e.style)
 		}
 	}
 
@@ -188,7 +186,7 @@ func (e *editor) Draw() {
 		if e.startLine-1+i >= len(e.buf) {
 			break
 		}
-		e.drawLine(e.startLine + i)
+		e.renderLine(e.startLine + i)
 	}
 }
 
@@ -277,7 +275,7 @@ func (e *editor) ShowCursor() {
 		x = e.bx1 + e.column + padding - 1
 	}
 
-	e.jo.ShowCursor(x, e.by1+e.line-e.startLine)
+	screen.ShowCursor(x, e.by1+e.line-e.startLine)
 }
 
 func (e *editor) cursorUp() {
@@ -287,7 +285,7 @@ func (e *editor) cursorUp() {
 	if e.line == e.startLine {
 		e.startLine--
 		e.cursorLineAdd(-1)
-		e.Draw()
+		e.Render()
 		return
 	}
 	e.cursorLineAdd(-1)
@@ -306,7 +304,7 @@ func (e *editor) cursorDown() {
 
 	e.startLine++
 	e.cursorLineAdd(1)
-	e.Draw()
+	e.Render()
 }
 
 // go to the first non-whitespace character in line
@@ -336,7 +334,7 @@ func (e *editor) scrollUp(delta int) {
 	} else {
 		e.startLine -= delta
 	}
-	e.Draw()
+	e.Render()
 }
 
 func (e *editor) scrollDown(delta int) {
@@ -348,7 +346,7 @@ func (e *editor) scrollDown(delta int) {
 	} else {
 		e.startLine += delta
 	}
-	e.Draw()
+	e.Render()
 }
 
 func (e *editor) write(r rune) {
@@ -357,7 +355,7 @@ func (e *editor) write(r rune) {
 	copy(rs, text[e.column-1:])
 	text = append(append(text[:e.column-1], r), rs...)
 	e.buf[e.line-1] = text
-	e.drawLine(e.line)
+	e.renderLine(e.line)
 	e.cursorColAdd(1)
 	e.dirty = true
 }
@@ -394,7 +392,7 @@ func (e *editor) deleteLeft() {
 		e.buf = append(e.buf[:e.line-1], e.buf[e.line:]...)
 		e.cursorLineAdd(-1)
 		e.cursorColAdd(1 + len(prevLine) - e.column)
-		e.Draw()
+		e.Render()
 		return
 	}
 
@@ -407,21 +405,21 @@ func (e *editor) deleteLeft() {
 		text = append(text[:e.column-2], text[e.column-1:]...)
 	}
 	e.buf[e.line-1] = text
-	e.drawLine(e.line)
+	e.renderLine(e.line)
 	e.cursorColAdd(-1)
 }
 
 func (e *editor) deleteToLineStart() {
 	e.dirty = true
 	e.buf[e.line-1] = e.buf[e.line-1][e.column-1:]
-	e.drawLine(e.line)
+	e.renderLine(e.line)
 	e.cursorLineStart()
 }
 
 func (e *editor) deleteToLineEnd() {
 	e.dirty = true
 	e.buf[e.line-1] = e.buf[e.line-1][:e.column-1]
-	e.drawLine(e.line)
+	e.renderLine(e.line)
 }
 
 func (e *editor) cursorEnter() {
@@ -440,7 +438,7 @@ func (e *editor) cursorEnter() {
 	e.buf = append(append(e.buf[:e.line], newText), buf...)
 	e.cursorLineAdd(1)
 	e.cursorLineStart()
-	e.Draw()
+	e.Render()
 }
 
 // A newline is appended if the last character of buffer is not
@@ -483,7 +481,7 @@ func (e *editor) Find(s string) {
 	if len(match) == 0 {
 		return
 	}
-	defer e.Draw()
+	defer e.Render()
 
 	// jump to the nearest matching line
 	var minGap = len(e.buf)
@@ -536,7 +534,7 @@ func (e *editor) FindNext() {
 	}
 	// place the cursor at the end of the matching word for easy editing
 	e.column = j + len(e.findKey) + 1
-	e.Draw()
+	e.Render()
 }
 
 func (e *editor) FindPrev() {
@@ -559,7 +557,7 @@ func (e *editor) FindPrev() {
 	}
 	// place the cursor at the end of the matching word for easy editing
 	e.column = j + len(e.findKey) + 1
-	e.Draw()
+	e.Render()
 }
 
 func (e *editor) HandleEvent(ev tcell.Event) {
@@ -609,24 +607,23 @@ func (e *editor) HandleEvent(ev tcell.Event) {
 		case tcell.KeyCtrlK:
 			e.deleteToLineEnd()
 		case tcell.KeyESC:
-			if _, ok := e.jo.statusBar.(*findBar); ok {
-				e.ClearFind()
-				e.Draw()
-			}
-			if _, ok := e.jo.statusBar.(*statusBar); !ok {
-				e.jo.statusBar = newStatusBar(e.jo)
-			}
+			// if _, ok := e.jo.statusBar.(*findBar); ok {
+			// 	e.ClearFind()
+			// 	e.Render()
+			// }
+			// if _, ok := e.jo.statusBar.(*statusBar); !ok {
+			// 	e.jo.statusBar = newStatusBar(e.jo)
+			// }
 		}
 	}
 }
 
-func (e *editor) Range() (x1, y1, x2, y2 int) { return e.x1, e.y1, e.x2, e.y2 }
+func (e *editor) Pos() (x1, y1, x2, y2 int) { return e.x1, e.y1, e.x2, e.y2 }
 func (e *editor) LostFocus() {
 	// TODO: format
 }
 
 type lineBar struct {
-	s         tcell.Screen
 	x1, y1    int
 	x2, y2    int
 	style     tcell.Style
@@ -634,10 +631,10 @@ type lineBar struct {
 	endLine   int
 }
 
-func (b *lineBar) draw() {
+func (b *lineBar) render() {
 	for y := b.y1; y <= b.y2; y++ {
 		for x := b.x1; x <= b.x2; x++ {
-			b.s.SetContent(x, y, ' ', nil, b.style)
+			screen.SetContent(x, y, ' ', nil, b.style)
 		}
 	}
 
@@ -650,7 +647,7 @@ func (b *lineBar) draw() {
 				break
 			}
 			// align right
-			b.s.SetContent(b.x2-(len(s)-j)-paddingRight, y+i-b.startLine, c, nil, b.style)
+			screen.SetContent(b.x2-(len(s)-j)-paddingRight, y+i-b.startLine, c, nil, b.style)
 		}
 	}
 }

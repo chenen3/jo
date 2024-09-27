@@ -13,8 +13,11 @@ type statusBar struct {
 }
 
 func newStatusBar(j *Jo) *statusBar { return &statusBar{jo: j} }
+func (b *statusBar) SetPos(x, y, width, height int) {
+	// TODO
+}
 
-func (b *statusBar) Draw() {
+func (b *statusBar) Render() {
 	style := tcell.StyleDefault.Background(tcell.ColorLightGray).Foreground(tcell.ColorBlack)
 	width, height := b.jo.Size()
 	b.x1, b.y1 = 0, height-1
@@ -43,6 +46,6 @@ func (b *statusBar) Draw() {
 
 func (b *statusBar) HandleEvent(_ tcell.Event) { b.jo.HideCursor() }
 
-func (b *statusBar) Range() (x1, y1, x2, y2 int) { return b.x1, b.y1, b.x2, b.y2 }
-func (b *statusBar) ShowCursor()                 {}
-func (b *statusBar) LostFocus()                  {}
+func (b *statusBar) Pos() (x1, y1, x2, y2 int) { return b.x1, b.y1, b.x2, b.y2 }
+func (b *statusBar) ShowCursor()               {}
+func (b *statusBar) LostFocus()                {}

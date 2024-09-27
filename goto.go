@@ -25,7 +25,10 @@ func newGotoBar(j *Jo) *gotoBar {
 	return &gotoBar{jo: j}
 }
 
-func (g *gotoBar) Draw() {
+func (g *gotoBar) SetPos(x, y, width, height int) {
+	// TODO
+}
+func (g *gotoBar) Render() {
 	style := tcell.StyleDefault.Background(tcell.ColorLightYellow).Foreground(tcell.ColorBlack)
 	width, height := g.jo.Size()
 	g.x1, g.y1 = 0, height-1
@@ -73,7 +76,7 @@ func (g *gotoBar) Draw() {
 
 }
 
-func (g *gotoBar) Range() (x1, y1, x2, y2 int) { return g.x1, g.y1, g.x2, g.y2 }
+func (g *gotoBar) Pos() (x1, y1, x2, y2 int) { return g.x1, g.y1, g.x2, g.y2 }
 
 func (g *gotoBar) ShowCursor() {
 	g.jo.ShowCursor(g.cursorX, g.cursorY)
@@ -86,7 +89,7 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 	}
 	switch k.Key() {
 	case tcell.KeyRune:
-		g.jo.editor.Draw() // clear previous options
+		g.jo.editor.Render() // clear previous options
 		g.keyword = append(g.keyword, k.Rune())
 		if g.keyword[0] == ':' {
 			return
@@ -100,7 +103,7 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 		if len(g.keyword) == 0 {
 			return
 		}
-		g.jo.editor.Draw() // clear previous options
+		g.jo.editor.Render() // clear previous options
 		g.keyword = g.keyword[:len(g.keyword)-1]
 		if len(g.keyword) == 0 {
 			return
@@ -131,7 +134,7 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 			} else {
 				g.jo.editor.startLine = line - g.jo.editor.PageSize()/2
 			}
-			g.jo.editor.Draw()
+			g.jo.editor.Render()
 			g.jo.focus = g.jo.editor
 			g.jo.statusBar = newStatusBar(g.jo)
 			return
@@ -142,9 +145,9 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 		}
 		if len(g.options) > 0 {
 			g.jo.titleBar = newTitleBar(g.jo, g.options[g.index])
-			g.jo.titleBar.Draw()
+			g.jo.titleBar.Render()
 			g.jo.editor = newEditor(g.jo, g.options[g.index])
-			g.jo.editor.Draw()
+			g.jo.editor.Render()
 			g.jo.statusBar = newStatusBar(g.jo)
 			g.jo.focus = g.jo.editor
 		}
@@ -162,14 +165,14 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 		g.index--
 	case tcell.KeyESC:
 		g.jo.statusBar = newStatusBar(g.jo)
-		g.jo.editor.Draw()
+		g.jo.editor.Render()
 		g.jo.focus = g.jo.editor
 	}
 }
 
 func (g *gotoBar) LostFocus() {
 	g.jo.statusBar = newStatusBar(g.jo)
-	g.jo.editor.Draw()
+	g.jo.editor.Render()
 }
 
 var projectFiles []string

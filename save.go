@@ -19,10 +19,14 @@ func newSaveBar(j *Jo, quit bool) *saveBar {
 	return &saveBar{jo: j, quit: quit}
 }
 
-func (s *saveBar) Update(string)               {}
-func (s *saveBar) Range() (int, int, int, int) { return s.x1, s.y1, s.x2, s.y2 }
+func (s *saveBar) SetPos(x, y, width, height int) {
+	// TODO
+}
 
-func (s *saveBar) Draw() {
+func (s *saveBar) Update(string)             {}
+func (s *saveBar) Pos() (int, int, int, int) { return s.x1, s.y1, s.x2, s.y2 }
+
+func (s *saveBar) Render() {
 	style := tcell.StyleDefault.Background(tcell.ColorLightYellow).Foreground(tcell.ColorBlack)
 	width, height := s.jo.Size()
 	s.x1, s.y1 = 0, height-1
@@ -116,7 +120,7 @@ func (s *saveBar) HandleEvent(ev tcell.Event) {
 		if s.jo.editor.filename == "" {
 			s.jo.editor.filename = filename
 			s.jo.titleBar.name = filename
-			s.jo.titleBar.Draw()
+			s.jo.titleBar.Render()
 		}
 		s.jo.statusBar = newStatusBar(s.jo)
 		s.jo.focus = s.jo.editor

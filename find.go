@@ -18,7 +18,10 @@ func newFindBar(j *Jo) *findBar {
 	return &findBar{jo: j}
 }
 
-func (f *findBar) Draw() {
+func (f *findBar) SetPos(x, y, width, height int) {
+	// TODO
+}
+func (f *findBar) Render() {
 	style := tcell.StyleDefault.Background(tcell.ColorLightYellow).Foreground(tcell.ColorBlack)
 	width, height := f.jo.Size()
 	f.x1, f.y1 = 0, height-1
@@ -58,7 +61,7 @@ func (f *findBar) Draw() {
 	}
 }
 
-func (f *findBar) Range() (x1, y1, x2, y2 int) { return f.x1, f.y1, f.x2, f.y2 }
+func (f *findBar) Pos() (x1, y1, x2, y2 int) { return f.x1, f.y1, f.x2, f.y2 }
 
 func (f *findBar) ShowCursor() {
 	f.jo.ShowCursor(f.cursorX, f.cursorY)
@@ -87,7 +90,7 @@ func (f *findBar) HandleEvent(ev tcell.Event) {
 		f.jo.editor.FindPrev()
 	case tcell.KeyESC:
 		f.jo.editor.ClearFind()
-		f.jo.editor.Draw()
+		f.jo.editor.Render()
 		f.jo.statusBar = newStatusBar(f.jo)
 		f.jo.focus = f.jo.editor
 	}
