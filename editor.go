@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 
@@ -19,15 +20,16 @@ type editor struct {
 	buf      [][]rune
 	bx1, by1 int
 	bx2, by2 int
-	row      int // line number, starting at 1
-	col      int // column number, starting at 1
+	line     int // line number, starting at 1
+	column   int // column number, starting at 1
 	dirty    bool
+	filename string
 
 	lineBar   *lineBar
 	startLine int // starting line number
 
 	findKey   string
-	findRow   int // line number when starting to find
+	findLine  int // line number when starting to find
 	findMatch [][2]int
 	findIndex int // index of the matching result
 }
@@ -37,15 +39,26 @@ func (e *editor) ClearFind() {
 	e.findMatch = nil
 }
 
-// It is not efficient to accept src in bytes, but it is acceptable.
-func newEditor(j *Jo, src []byte) (*editor, error) {
+func newEditor(j *Jo, filename string) *editor {
 	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	e := &editor{
 		jo:        j,
 		style:     style,
 		startLine: 1,
-		row:       1,
-		col:       1,
+		line:      1,
+		column:    1,
+		filename:  filename,
+		lineBar: &lineBar{
+			s:     j,
+			style: style.Foreground(tcell.ColorGray),
+		},
+	}
+
+	src, err := os.ReadFile(filename)
+	if err != nil {
+		logger.Println(err)
+		e.buf = append(e.buf, []rune{})
+		return e
 	}
 
 	a := bytes.Split(src, []byte{'\n'})
@@ -57,12 +70,7 @@ func newEditor(j *Jo, src []byte) (*editor, error) {
 		// file ends with a new line
 		e.buf = append(e.buf, []rune{})
 	}
-
-	e.lineBar = &lineBar{
-		s:     j,
-		style: style.Foreground(tcell.ColorGray),
-	}
-	return e, nil
+	return e
 }
 
 // the number of lines visible in the editor view
@@ -82,33 +90,33 @@ func leadingTabs(line []rune) int {
 	return n
 }
 
-func (e *editor) drawLine(row int) {
-	line := e.buf[row-1]
+func (e *editor) drawLine(line int) {
+	text := e.buf[line-1]
 	for x := e.bx1; x <= e.bx2; x++ {
-		if x <= e.bx1+len(line)-1 {
+		if x <= e.bx1+len(text)-1 {
 			continue
 		}
-		e.jo.SetContent(x, e.by1+row-e.startLine, ' ', nil, e.style)
+		e.jo.SetContent(x, e.by1+line-e.startLine, ' ', nil, e.style)
 	}
 
-	if len(line) == 0 {
+	if len(text) == 0 {
 		return
 	}
 
 	var mi int
 	var inLineMatch [][2]int
 	for _, m := range e.findMatch {
-		if m[0] == row-1 {
+		if m[0] == line-1 {
 			inLineMatch = append(inLineMatch, m)
 		}
 	}
 
-	tokens := parseToken(line)
+	tokens := parseToken(text)
 	i := 0
-	tabs := leadingTabs(line)
+	tabs := leadingTabs(text)
 	padding := 0
 	style := e.style.Foreground(tokenColor(tokens[i].class))
-	for j := range line {
+	for j := range text {
 		if j >= tokens[i].off+tokens[i].len && i < len(tokens)-1 {
 			i++
 			style = style.Foreground(tokenColor(tokens[i].class))
@@ -129,13 +137,13 @@ func (e *editor) drawLine(row int) {
 			}
 		}
 
-		e.jo.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, line[j], nil, style)
+		e.jo.SetContent(e.bx1+padding+j, e.by1+line-e.startLine, text[j], nil, style)
 		if j < tabs {
 			// consider showing tab as '|' for debugging
-			e.jo.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, ' ', nil, e.style.Foreground(tcell.ColorGray))
+			e.jo.SetContent(e.bx1+padding+j, e.by1+line-e.startLine, ' ', nil, e.style.Foreground(tcell.ColorGray))
 			for k := 0; k < tabWidth-1; k++ {
 				padding++
-				e.jo.SetContent(e.bx1+padding+j, e.by1+row-e.startLine, ' ', nil, e.style.Foreground(tcell.ColorGray))
+				e.jo.SetContent(e.bx1+padding+j, e.by1+line-e.startLine, ' ', nil, e.style.Foreground(tcell.ColorGray))
 			}
 		}
 	}
@@ -184,62 +192,62 @@ func (e *editor) Draw() {
 	}
 }
 
-func (e *editor) cursorRowAdd(delta int) {
+func (e *editor) cursorLineAdd(delta int) {
 	if delta == 0 {
 		return
 	}
 
-	row := e.row + delta
-	if row < 1 {
-		row = 1
-	} else if row > len(e.buf) {
-		row = len(e.buf)
+	line := e.line + delta
+	if line < 1 {
+		line = 1
+	} else if line > len(e.buf) {
+		line = len(e.buf)
 	}
-	e.row = row
+	e.line = line
 
-	if e.col > len(e.buf[e.row-1])+1 {
-		e.col = len(e.buf[e.row-1]) + 1
+	if e.column > len(e.buf[e.line-1])+1 {
+		e.column = len(e.buf[e.line-1]) + 1
 	}
 }
 
 func (e *editor) cursorColAdd(delta int) {
-	col := e.col + delta
-	if 1 <= col && col <= len(e.buf[e.row-1])+1 {
-		e.col = col
+	col := e.column + delta
+	if 1 <= col && col <= len(e.buf[e.line-1])+1 {
+		e.column = col
 		return
 	}
 
 	// line start
 	if col < 1 {
-		if e.row == 1 {
-			e.col = 1
+		if e.line == 1 {
+			e.column = 1
 			return
 		}
 		// to the end of the previous line
-		e.row--
-		e.col = len(e.buf[e.row-1]) + 1
+		e.line--
+		e.column = len(e.buf[e.line-1]) + 1
 		return
 	}
 
 	// line end
-	if e.row == len(e.buf) {
-		e.col = len(e.buf[e.row-1]) + 1
+	if e.line == len(e.buf) {
+		e.column = len(e.buf[e.line-1]) + 1
 		return
 	}
-	e.row++
-	e.col = 1
+	e.line++
+	e.column = 1
 }
 
-func (e *editor) cursorToRowCol(x, y int) {
+func (e *editor) setCursor(x, y int) {
 	if y < e.by1 {
 		y = e.by1
 	}
-	row := y - e.by1 + e.startLine
-	if row > len(e.buf) {
-		row = len(e.buf)
+	line := y - e.by1 + e.startLine
+	if line > len(e.buf) {
+		line = len(e.buf)
 	}
 	col := x - e.bx1 + 1
-	tabs := leadingTabs(e.buf[row-1])
+	tabs := leadingTabs(e.buf[line-1])
 	if col <= tabs*tabWidth {
 		i, j := col/tabWidth, col%tabWidth
 		// When the position of the cursor is more than half of the tabWidth,
@@ -253,70 +261,70 @@ func (e *editor) cursorToRowCol(x, y int) {
 		col -= tabs * (tabWidth - 1)
 	}
 
-	if col > len(e.buf[row-1])+1 {
-		col = len(e.buf[row-1]) + 1
+	if col > len(e.buf[line-1])+1 {
+		col = len(e.buf[line-1]) + 1
 	}
-	e.row, e.col = row, col
+	e.line, e.column = line, col
 }
 
 func (e *editor) ShowCursor() {
-	tabs := leadingTabs(e.buf[e.row-1])
+	tabs := leadingTabs(e.buf[e.line-1])
 	var x int
-	if e.col <= tabs {
-		x = e.bx1 + (e.col-1)*tabWidth
+	if e.column <= tabs {
+		x = e.bx1 + (e.column-1)*tabWidth
 	} else {
 		padding := tabs * (tabWidth - 1)
-		x = e.bx1 + e.col + padding - 1
+		x = e.bx1 + e.column + padding - 1
 	}
 
-	e.jo.ShowCursor(x, e.by1+e.row-e.startLine)
+	e.jo.ShowCursor(x, e.by1+e.line-e.startLine)
 }
 
 func (e *editor) cursorUp() {
-	if e.row == 1 {
+	if e.line == 1 {
 		return
 	}
-	if e.row == e.startLine {
+	if e.line == e.startLine {
 		e.startLine--
-		e.cursorRowAdd(-1)
+		e.cursorLineAdd(-1)
 		e.Draw()
 		return
 	}
-	e.cursorRowAdd(-1)
+	e.cursorLineAdd(-1)
 }
 
 func (e *editor) cursorDown() {
-	if e.row == len(e.buf) {
+	if e.line == len(e.buf) {
 		// end of file
 		return
 	}
 
-	if e.row < e.startLine+e.PageSize()-1 {
-		e.cursorRowAdd(1)
+	if e.line < e.startLine+e.PageSize()-1 {
+		e.cursorLineAdd(1)
 		return
 	}
 
 	e.startLine++
-	e.cursorRowAdd(1)
+	e.cursorLineAdd(1)
 	e.Draw()
 }
 
 // go to the first non-whitespace character in line
 func (e *editor) cursorLineStart() {
-	for i, c := range e.buf[e.row-1] {
+	for i, c := range e.buf[e.line-1] {
 		if c != ' ' && c != '\t' {
-			e.col = i + 1
+			e.column = i + 1
 			return
 		}
 	}
-	e.col = 1
+	e.column = 1
 }
 
 func (e *editor) cursorLineEnd() {
-	if e.col == len(e.buf[e.row-1])+1 {
+	if e.column == len(e.buf[e.line-1])+1 {
 		return
 	}
-	e.cursorColAdd(len(e.buf[e.row-1]) - e.col + 1)
+	e.cursorColAdd(len(e.buf[e.line-1]) - e.column + 1)
 }
 
 func (e *editor) scrollUp(delta int) {
@@ -344,19 +352,19 @@ func (e *editor) scrollDown(delta int) {
 }
 
 func (e *editor) write(r rune) {
-	line := e.buf[e.row-1]
-	rs := make([]rune, len(line[e.col-1:]))
-	copy(rs, line[e.col-1:])
-	line = append(append(line[:e.col-1], r), rs...)
-	e.buf[e.row-1] = line
-	e.drawLine(e.row)
+	text := e.buf[e.line-1]
+	rs := make([]rune, len(text[e.column-1:]))
+	copy(rs, text[e.column-1:])
+	text = append(append(text[:e.column-1], r), rs...)
+	e.buf[e.line-1] = text
+	e.drawLine(e.line)
 	e.cursorColAdd(1)
 	e.dirty = true
 }
 
 // Line return current line number in editor
 func (e *editor) Line() int {
-	return e.row
+	return e.line
 }
 
 // Column return current column number in editor.
@@ -364,12 +372,12 @@ func (e *editor) Line() int {
 // instead of editor buffer.
 func (e *editor) Column() int {
 	var col int
-	tabs := leadingTabs(e.buf[e.row-1])
-	if e.col <= tabs {
-		col = (e.col-1)*tabWidth + 1
+	tabs := leadingTabs(e.buf[e.line-1])
+	if e.column <= tabs {
+		col = (e.column-1)*tabWidth + 1
 	} else {
 		padding := tabs * (tabWidth - 1)
-		col = e.col + padding
+		col = e.column + padding
 	}
 	return col
 }
@@ -377,61 +385,60 @@ func (e *editor) Column() int {
 func (e *editor) deleteLeft() {
 	e.dirty = true
 	// cursor at line start, merge the line to previous one
-	if e.col == 1 {
-		if e.row == 1 {
+	if e.column == 1 {
+		if e.line == 1 {
 			return
 		}
-		// prevLen := len(e.buf[e.row-2])
-		prevLine := e.buf[e.row-2]
-		e.buf[e.row-2] = append(prevLine, e.buf[e.row-1]...)
-		e.buf = append(e.buf[:e.row-1], e.buf[e.row:]...)
-		e.cursorRowAdd(-1)
-		e.cursorColAdd(1 + len(prevLine) - e.col)
+		prevLine := e.buf[e.line-2]
+		e.buf[e.line-2] = append(prevLine, e.buf[e.line-1]...)
+		e.buf = append(e.buf[:e.line-1], e.buf[e.line:]...)
+		e.cursorLineAdd(-1)
+		e.cursorColAdd(1 + len(prevLine) - e.column)
 		e.Draw()
 		return
 	}
 
-	line := e.buf[e.row-1]
-	if e.col-1 == len(line) {
+	text := e.buf[e.line-1]
+	if e.column-1 == len(text) {
 		// line end
-		line = line[:e.col-2]
+		text = text[:e.column-2]
 	} else {
 		// TODO: maybe slices.Delete ?
-		line = append(line[:e.col-2], line[e.col-1:]...)
+		text = append(text[:e.column-2], text[e.column-1:]...)
 	}
-	e.buf[e.row-1] = line
-	e.drawLine(e.row)
+	e.buf[e.line-1] = text
+	e.drawLine(e.line)
 	e.cursorColAdd(-1)
 }
 
 func (e *editor) deleteToLineStart() {
 	e.dirty = true
-	e.buf[e.row-1] = e.buf[e.row-1][e.col-1:]
-	e.drawLine(e.row)
+	e.buf[e.line-1] = e.buf[e.line-1][e.column-1:]
+	e.drawLine(e.line)
 	e.cursorLineStart()
 }
 
 func (e *editor) deleteToLineEnd() {
 	e.dirty = true
-	e.buf[e.row-1] = e.buf[e.row-1][:e.col-1]
-	e.drawLine(e.row)
+	e.buf[e.line-1] = e.buf[e.line-1][:e.column-1]
+	e.drawLine(e.line)
 }
 
-func (e *editor) enter() {
+func (e *editor) cursorEnter() {
 	e.dirty = true
 	// cut current line
-	line := e.buf[e.row-1]
-	newline := make([]rune, len(line[e.col-1:]))
-	copy(newline, line[e.col-1:])
-	e.buf[e.row-1] = line[:e.col-1]
+	text := e.buf[e.line-1]
+	newText := make([]rune, len(text[e.column-1:]))
+	copy(newText, text[e.column-1:])
+	e.buf[e.line-1] = text[:e.column-1]
 	// TODO: not efficient
-	buf := make([][]rune, len(e.buf[e.row:]))
-	for i, rs := range e.buf[e.row:] {
+	buf := make([][]rune, len(e.buf[e.line:]))
+	for i, rs := range e.buf[e.line:] {
 		buf[i] = make([]rune, len(rs))
 		copy(buf[i], rs)
 	}
-	e.buf = append(append(e.buf[:e.row], newline), buf...)
-	e.cursorRowAdd(1)
+	e.buf = append(append(e.buf[:e.line], newText), buf...)
+	e.cursorLineAdd(1)
 	e.cursorLineStart()
 	e.Draw()
 }
@@ -463,7 +470,7 @@ func (e *editor) Find(s string) {
 		return
 	}
 	e.findKey = s
-	e.findRow = e.row
+	e.findLine = e.line
 
 	var match [][2]int
 	for i := range e.buf {
@@ -482,7 +489,7 @@ func (e *editor) Find(s string) {
 	var minGap = len(e.buf)
 	var near int
 	for i, m := range match {
-		gap := m[0] + 1 - e.findRow
+		gap := m[0] + 1 - e.findLine
 		if gap < 0 {
 			gap = 0 - gap
 		}
@@ -499,13 +506,13 @@ func (e *editor) Find(s string) {
 	}
 	e.findIndex = near
 
-	e.row = match[near][0] + 1
+	e.line = match[near][0] + 1
 	// place the cursor at the end of the matching word for easy editing
-	e.col = match[near][1] + len(e.findKey) + 1
-	if e.row < e.startLine {
-		e.startLine = e.row
-	} else if e.row > (e.startLine + e.PageSize() - 1) {
-		e.startLine = e.row - e.PageSize()/2
+	e.column = match[near][1] + len(e.findKey) + 1
+	if e.line < e.startLine {
+		e.startLine = e.line
+	} else if e.line > (e.startLine + e.PageSize() - 1) {
+		e.startLine = e.line - e.PageSize()/2
 	}
 }
 
@@ -521,14 +528,14 @@ func (e *editor) FindNext() {
 	}
 
 	i, j := e.findMatch[e.findIndex][0], e.findMatch[e.findIndex][1]
-	e.row = i + 1
-	if e.row < e.startLine {
-		e.startLine = e.row
-	} else if e.row > (e.startLine + e.PageSize() - 1) {
-		e.startLine = e.row - e.PageSize()/2
+	e.line = i + 1
+	if e.line < e.startLine {
+		e.startLine = e.line
+	} else if e.line > (e.startLine + e.PageSize() - 1) {
+		e.startLine = e.line - e.PageSize()/2
 	}
 	// place the cursor at the end of the matching word for easy editing
-	e.col = j + len(e.findKey) + 1
+	e.column = j + len(e.findKey) + 1
 	e.Draw()
 }
 
@@ -544,14 +551,14 @@ func (e *editor) FindPrev() {
 	}
 
 	i, j := e.findMatch[e.findIndex][0], e.findMatch[e.findIndex][1]
-	e.row = i + 1
-	if e.row < e.startLine {
-		e.startLine = e.row
-	} else if e.row > (e.startLine + e.PageSize() - 1) {
-		e.startLine = e.row - e.PageSize()/2
+	e.line = i + 1
+	if e.line < e.startLine {
+		e.startLine = e.line
+	} else if e.line > (e.startLine + e.PageSize() - 1) {
+		e.startLine = e.line - e.PageSize()/2
 	}
 	// place the cursor at the end of the matching word for easy editing
-	e.col = j + len(e.findKey) + 1
+	e.column = j + len(e.findKey) + 1
 	e.Draw()
 }
 
@@ -561,7 +568,7 @@ func (e *editor) HandleEvent(ev tcell.Event) {
 		x, y := ev.Position()
 		switch ev.Buttons() {
 		case tcell.Button1, tcell.Button2:
-			e.cursorToRowCol(x, y)
+			e.setCursor(x, y)
 		case tcell.WheelUp:
 			delta := int(float32(y) * wheelScrollSensitivity)
 			e.scrollUp(delta)
@@ -573,10 +580,10 @@ func (e *editor) HandleEvent(ev tcell.Event) {
 		switch ev.Key() {
 		case tcell.KeyPgUp:
 			e.scrollUp(e.PageSize() - 1)
-			e.cursorRowAdd(-(e.PageSize() - 1))
+			e.cursorLineAdd(-(e.PageSize() - 1))
 		case tcell.KeyPgDn:
 			e.scrollDown(e.PageSize() - 1)
-			e.cursorRowAdd(e.PageSize() - 1)
+			e.cursorLineAdd(e.PageSize() - 1)
 		case tcell.KeyHome:
 			e.cursorLineStart()
 		case tcell.KeyEnd:
@@ -594,7 +601,7 @@ func (e *editor) HandleEvent(ev tcell.Event) {
 		case tcell.KeyTab:
 			e.write('\t')
 		case tcell.KeyEnter:
-			e.enter()
+			e.cursorEnter()
 		case tcell.KeyBackspace, tcell.KeyBackspace2:
 			e.deleteLeft()
 		case tcell.KeyCtrlU:

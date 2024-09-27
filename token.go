@@ -23,7 +23,7 @@ const (
 )
 
 var (
-	delimiter = []rune{
+	delimiters = []rune{
 		' ', '\'', '[', ']', '{', '}', '"', '\t', '\n', '.', ',', '`', '(', ')',
 		'-', '+', '*', '&', '|', '=', '!', ':', '<', '>',
 	}
@@ -113,7 +113,7 @@ func parseToken(line []rune) []tokenInfo {
 			break
 		}
 
-		if !slices.Contains(delimiter, line[i]) {
+		if !slices.Contains(delimiters, line[i]) {
 			token = append(token, line[i])
 			if i == len(line)-1 {
 				s = append(s, newTokenInfo(token, off, 0))
@@ -126,7 +126,7 @@ func parseToken(line []rune) []tokenInfo {
 			s = append(s, newTokenInfo(token, off, delim))
 			token = token[:0]
 		}
-		s = append(s, newTokenInfo(line[i:i+1], i, 0)) // delimter
+		s = append(s, newTokenInfo(line[i:i+1], i, 0)) // delimiter
 		off = i + 1
 		lastDelim = line[i]
 	}

@@ -34,7 +34,7 @@ func (s *saveBar) Draw() {
 	}
 
 	prompt := "save changes?"
-	if s.jo.filename == "" {
+	if s.jo.editor.filename == "" {
 		prompt = "save as:"
 	}
 
@@ -44,14 +44,14 @@ func (s *saveBar) Draw() {
 		s.cursorX++
 	}
 
-	if s.jo.filename == "" && len(s.filename) == 0 {
+	if s.jo.editor.filename == "" && len(s.filename) == 0 {
 		placeholder := "file name"
 		for i, c := range placeholder {
 			s.jo.SetContent(s.cursorX+i, s.cursorY, c, nil, style.Foreground(tcell.ColorGray))
 		}
 	}
 
-	if s.jo.filename == "" && len(s.filename) != 0 {
+	if s.jo.editor.filename == "" && len(s.filename) != 0 {
 		for _, c := range s.filename {
 			s.jo.SetContent(s.cursorX, s.cursorY, c, nil, style)
 			s.cursorX++
@@ -82,14 +82,14 @@ func (s *saveBar) HandleEvent(ev tcell.Event) {
 
 	switch k.Key() {
 	case tcell.KeyRune:
-		if s.jo.filename != "" {
+		if s.jo.editor.filename != "" {
 			return
 		}
 		s.filename = append(s.filename, k.Rune())
 	case tcell.KeyCtrlS, tcell.KeyEnter:
 		var filename string
-		if s.jo.filename != "" {
-			filename = s.jo.filename
+		if s.jo.editor.filename != "" {
+			filename = s.jo.editor.filename
 		} else if len(s.filename) != 0 {
 			filename = string(s.filename)
 		} else {
@@ -113,13 +113,15 @@ func (s *saveBar) HandleEvent(ev tcell.Event) {
 			close(s.jo.done)
 			return
 		}
-		if s.jo.filename == "" {
-			s.jo.filename = filename
+		if s.jo.editor.filename == "" {
+			s.jo.editor.filename = filename
+			s.jo.titleBar.name = filename
+			s.jo.titleBar.Draw()
 		}
 		s.jo.statusBar = newStatusBar(s.jo)
 		s.jo.focus = s.jo.editor
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		if s.jo.filename != "" {
+		if s.jo.editor.filename != "" {
 			return
 		}
 		if len(s.filename) == 0 {

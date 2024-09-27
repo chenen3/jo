@@ -20,7 +20,6 @@ type Jo struct {
 	titleBar  *titleBar
 	editor    *editor
 	statusBar View
-	filename  string
 	done      chan struct{}
 	focus     View // the focused view will handle event
 }
@@ -29,6 +28,11 @@ type titleBar struct {
 	jo     *Jo
 	x1, y1 int
 	x2, y2 int
+	name   string
+}
+
+func newTitleBar(j *Jo, name string) *titleBar {
+	return &titleBar{jo: j, name: name}
 }
 
 func (t *titleBar) Draw() {
@@ -44,9 +48,9 @@ func (t *titleBar) Draw() {
 		}
 	}
 
-	title := t.jo.filename
+	title := t.name
 	if title == "" {
-		title = "New Buffer"
+		title = "untitled"
 	}
 	for i, c := range title {
 		t.jo.SetContent(t.x1+i, t.y1, c, nil, style)
@@ -89,29 +93,16 @@ func main() {
 	}
 
 	if len(os.Args) > 1 {
-		j.filename = os.Args[1]
+		filename := os.Args[1]
+		j.titleBar = newTitleBar(j, filename)
+		j.editor = newEditor(j, filename)
+	} else {
+		j.titleBar = newTitleBar(j, "")
+		j.editor = newEditor(j, "")
 	}
 
-	j.titleBar = &titleBar{jo: j}
 	j.titleBar.Draw()
-
-	var src []byte
-	if j.filename != "" {
-		src, err = os.ReadFile(j.filename)
-		if err != nil {
-			logger.Print(err)
-			return
-		}
-	}
-
-	e, err := newEditor(j, src)
-	if err != nil {
-		logger.Println(err)
-		return
-	}
-	j.editor = e
 	j.editor.Draw()
-
 	j.statusBar = newStatusBar(j)
 	j.statusBar.Draw()
 
