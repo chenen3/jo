@@ -22,8 +22,8 @@ func (t *titleBar) SetPos(x, y, width, height int) {
 	t.height = height
 }
 
-func (t *titleBar) Pos() (x1, y1, x2, y2 int) {
-	return t.x, t.y, t.x + t.width - 1, t.y + t.height - 1
+func (t *titleBar) Pos() (x1, y1, width, height int) {
+	return t.x, t.y, t.width, t.height
 }
 
 func (t *titleBar) Render() {

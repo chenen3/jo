@@ -17,9 +17,12 @@ import (
 // }
 
 type Jo struct {
-	View  View
-	focus View // handle event
-	done  chan struct{}
+	View      View
+	titleBar  *titleBar
+	editor    *editor
+	statusBar View
+	focus     View // handle event
+	done      chan struct{}
 }
 
 var logger *log.Logger
@@ -53,10 +56,21 @@ func main() {
 	screen.Clear()
 	defer screen.Fini()
 
+	var filename string
+	if len(os.Args) > 1 {
+		filename = os.Args[1]
+	}
+
 	j := &Jo{
 		done: make(chan struct{}),
-		View: &HStack{Views: []View{new(titleBar)}},
 	}
+	j.titleBar = newTitleBar(filename)
+	j.titleBar.SetPos(-1, -1, -1, 1)
+	j.editor = newEditor(filename)
+	j.statusBar = newStatusBar(j)
+	j.statusBar.SetPos(-1, -1, -1, 1)
+	j.View = VStack(j.titleBar, j.editor, j.statusBar)
+
 	width, height := screen.Size()
 	j.View.SetPos(0, 0, width, height)
 	j.View.Render()
@@ -65,20 +79,6 @@ func main() {
 		logger.Print(err)
 		return
 	}
-
-	// if len(os.Args) > 1 {
-	// 	filename := os.Args[1]
-	// 	j.titleBar = newTitleBar(j, filename)
-	// 	j.editor = newEditor(j, filename)
-	// } else {
-	// 	j.titleBar = newTitleBar(j, "")
-	// 	j.editor = newEditor(j, "")
-	// }
-
-	// j.titleBar.Render()
-	// j.editor.Render()
-	// j.statusBar = newStatusBar(j)
-	// j.statusBar.Render()
 
 	// j.focus = j.editor
 	// for {

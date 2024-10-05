@@ -45,7 +45,7 @@ func (e *editor) SetPos(x, y, width, height int) {
 	e.y2 = y + height - 1
 }
 
-func newEditor(j *Jo, filename string) *editor {
+func newEditor(filename string) *editor {
 	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	e := &editor{
 		style:     style,
@@ -58,18 +58,22 @@ func newEditor(j *Jo, filename string) *editor {
 		},
 	}
 
+	if filename == "" {
+		return e
+	}
+
 	src, err := os.ReadFile(filename)
 	if err != nil {
 		logger.Println(err)
 		e.buf = append(e.buf, []rune{})
 		return e
 	}
-
 	a := bytes.Split(src, []byte{'\n'})
 	e.buf = make([][]rune, len(a))
 	for i := range a {
 		e.buf[i] = []rune(string(a[i]))
 	}
+
 	if len(e.buf) == 0 || len(e.buf[len(e.buf)-1]) != 0 {
 		// file ends with a new line
 		e.buf = append(e.buf, []rune{})
@@ -618,7 +622,7 @@ func (e *editor) HandleEvent(ev tcell.Event) {
 	}
 }
 
-func (e *editor) Pos() (x1, y1, x2, y2 int) { return e.x1, e.y1, e.x2, e.y2 }
+func (e *editor) Pos() (x1, y1, width, height int) { return e.x1, e.y1, e.x2 - e.x1, e.y2 - e.y1 }
 func (e *editor) LostFocus() {
 	// TODO: format
 }
