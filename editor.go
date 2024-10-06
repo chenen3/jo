@@ -464,9 +464,14 @@ func (e *editor) Find(s string) {
 
 	var match [][2]int
 	for i := range e.buf {
-		j := strings.Index(string(e.buf[i]), e.findKey)
-		if j >= 0 {
-			match = append(match, [2]int{i, j})
+		var index, start int
+		for {
+			index = strings.Index(string(e.buf[i][start:]), e.findKey)
+			if index < 0 {
+				break
+			}
+			match = append(match, [2]int{i, start + index})
+			start += index + len(e.findKey)
 		}
 	}
 	e.findMatch = match
