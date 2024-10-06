@@ -11,6 +11,7 @@ type View interface {
 	HandleEvent(tcell.Event)
 	ShowCursor()
 	LostFocus()
+	Fixed() bool
 }
 
 type vstack struct {
@@ -42,21 +43,24 @@ func (v *vstack) Render() {
 		return
 	}
 
-	var sized int
+	var fixed int
 	var remainH = v.height
 	for _, view := range v.Views {
 		_, _, _, h := view.Pos()
-		if h > 0 {
-			sized++
+		if view.Fixed() {
+			fixed++
 			remainH -= h
 		}
 	}
-	avgH := remainH / (len(v.Views) - sized)
+	var avgH int
+	if fixed != len(v.Views) {
+		avgH = remainH / (len(v.Views) - fixed)
+	}
 
 	y := v.y
 	for _, view := range v.Views {
 		_, _, _, h := view.Pos()
-		if h > 0 {
+		if view.Fixed() {
 			view.SetPos(v.x, y, v.width, h)
 			y += h
 		} else {
@@ -101,21 +105,21 @@ func (h *hstack) Render() {
 		return
 	}
 
-	var sized int
+	var fixed int
 	var remainW = h.width
 	for _, view := range h.Views {
 		_, _, w, _ := view.Pos()
-		if w > 0 {
-			sized++
+		if view.Fixed() {
+			fixed++
 			remainW -= w
 		}
 	}
-	avgW := remainW / (len(h.Views) - sized)
+	avgW := remainW / (len(h.Views) - fixed)
 
 	x := h.x
 	for _, view := range h.Views {
 		_, _, w, _ := view.Pos()
-		if w > 0 {
+		if view.Fixed() {
 			view.SetPos(x, h.y, w, h.height)
 			x += w
 		} else {

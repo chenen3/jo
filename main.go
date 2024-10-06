@@ -7,22 +7,19 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-// type Jo struct {
-// 	tcell.Screen
-// 	titleBar  *titleBar
-// 	editor    *editor
-// 	statusBar View
-// 	done      chan struct{}
-// 	focus     View // the focused view will handle event
-// }
-
 type Jo struct {
-	View      View
+	stack     *vstack
 	titleBar  *titleBar
 	editor    *editor
 	statusBar View
 	focus     View // handle event
 	done      chan struct{}
+}
+
+func (j *Jo) replaceStatus(v View) {
+	x, y, w, h := j.statusBar.Pos()
+	v.SetPos(x, y, w, h)
+	j.statusBar = v
 }
 
 var logger *log.Logger
@@ -65,115 +62,91 @@ func main() {
 		done: make(chan struct{}),
 	}
 	j.titleBar = newTitleBar(filename)
-	j.titleBar.SetPos(-1, -1, -1, 1)
 	j.editor = newEditor(filename)
 	j.statusBar = newStatusBar(j)
-	j.statusBar.SetPos(-1, -1, -1, 1)
-	j.View = VStack(j.titleBar, j.editor, j.statusBar)
+	j.stack = VStack(j.titleBar, j.editor, j.statusBar)
 
-	width, height := screen.Size()
-	j.View.SetPos(0, 0, width, height)
-	j.View.Render()
-	err = j.Serve()
-	if err != nil {
-		logger.Print(err)
-		return
-	}
-
-	// j.focus = j.editor
-	// for {
-	// 	select {
-	// 	case <-j.done:
-	// 		return
-	// 	default:
-	// 	}
-
-	// 	// j.statusBar.Render()
-	// 	j.focus.ShowCursor()
-	// 	screen.Show()
-
-	// 	ev := screen.PollEvent()
-	// 	switch ev := ev.(type) {
-	// 	case *tcell.EventResize:
-	// 		j.titleBar.Render()
-	// 		j.statusBar.Render()
-	// 		j.editor.Render()
-	// 		j.Sync()
-	// 		continue
-	// 	case *tcell.EventKey:
-	// 		if ev.Key() == tcell.KeyCtrlQ {
-	// 			_, ok := j.statusBar.(*saveBar)
-	// 			if !ok && j.editor.dirty {
-	// 				j.statusBar = newSaveBar(j, true)
-	// 				j.focus = j.statusBar
-	// 				continue
-	// 			}
-	// 			return
-	// 		}
-	// 		if ev.Key() == tcell.KeyCtrlF {
-	// 			if _, ok := j.statusBar.(*findBar); !ok {
-	// 				j.statusBar = newFindBar(j)
-	// 			}
-	// 			j.focus = j.statusBar
-	// 			break
-	// 		}
-	// 		if ev.Key() == tcell.KeyCtrlS {
-	// 			if _, ok := j.statusBar.(*saveBar); !ok {
-	// 				j.statusBar = newSaveBar(j, false)
-	// 			}
-	// 			j.focus = j.statusBar
-	// 			break
-	// 		}
-	// 		if ev.Key() == tcell.KeyCtrlP {
-	// 			if _, ok := j.statusBar.(*gotoBar); !ok {
-	// 				j.statusBar = newGotoBar(j)
-	// 			}
-	// 			j.focus = j.statusBar
-	// 			break
-	// 		}
-	// 		if ev.Key() == tcell.KeyCtrlG {
-	// 			j.statusBar = &gotoBar{jo: j, keyword: []rune{':'}} // TODO
-	// 			j.focus = j.statusBar
-	// 			break
-	// 		}
-	// 	case *tcell.EventMouse:
-	// 		if ev.Buttons() == tcell.Button1 {
-	// 			x, y := ev.Position()
-	// 			if inView(j.editor, x, y) {
-	// 				if _, ok := j.focus.(*editor); ok {
-	// 					break
-	// 				}
-	// 				j.focus.LostFocus()
-	// 				j.focus = j.editor
-	// 			} else if inView(j.statusBar, x, y) {
-	// 				j.focus.LostFocus()
-	// 				j.focus = j.statusBar
-	// 			}
-	// 		}
-	// 	}
-	// 	j.focus.HandleEvent(ev)
-	// }
-}
-
-func (j *Jo) Serve() error {
+	j.focus = j.editor
 	for {
 		select {
 		case <-j.done:
-			return nil
+			return
 		default:
 		}
+
+		j.statusBar.Render()
+		j.focus.ShowCursor()
 		screen.Show()
+
 		ev := screen.PollEvent()
 		switch ev := ev.(type) {
+		case *tcell.EventResize:
+			width, height := screen.Size()
+			j.stack.SetPos(0, 0, width, height)
+			j.stack.Render()
+			screen.Sync()
+			continue
 		case *tcell.EventKey:
 			if ev.Key() == tcell.KeyCtrlQ {
-				close(j.done)
+				_, ok := j.statusBar.(*saveBar)
+				if !ok && j.editor.dirty {
+					j.replaceStatus(newSaveBar(j, true))
+					j.focus = j.statusBar
+					continue
+				}
+				return
+			}
+			if ev.Key() == tcell.KeyCtrlF {
+				if _, ok := j.statusBar.(*findBar); !ok {
+					j.replaceStatus(newFindBar(j))
+				}
+				j.focus = j.statusBar
+				break
+			}
+			if ev.Key() == tcell.KeyCtrlS {
+				if _, ok := j.statusBar.(*saveBar); !ok {
+					j.replaceStatus(newSaveBar(j, false))
+				}
+				j.focus = j.statusBar
+				break
+			}
+			if ev.Key() == tcell.KeyCtrlP {
+				if _, ok := j.statusBar.(*gotoBar); !ok {
+					j.replaceStatus(newGotoBar(j, ""))
+				}
+				j.focus = j.statusBar
+				break
+			}
+			if ev.Key() == tcell.KeyCtrlG {
+				j.replaceStatus(newGotoBar(j, ":"))
+				j.focus = j.statusBar
+				break
+			}
+			if ev.Key() == tcell.KeyESC {
+				j.editor.ClearFind()
+				j.editor.Render()
+				j.replaceStatus(newStatusBar(j))
+				j.focus = j.editor
+				break
+			}
+		case *tcell.EventMouse:
+			if ev.Buttons() == tcell.Button1 {
+				x, y := ev.Position()
+				if inView(j.editor, x, y) && j.focus != j.editor {
+					j.focus.LostFocus()
+					j.focus = j.editor
+				}
+				if inView(j.statusBar, x, y) && j.focus != j.statusBar {
+					j.focus.LostFocus()
+					j.focus = j.statusBar
+				}
 			}
 		}
+		j.focus.HandleEvent(ev)
 	}
 }
 
-// func inView(v View, x, y int) bool {
-// 	x1, y1, x2, y2 := v.Pos()
-// 	return x1 <= x && x <= x2 && y1 <= y && y <= y2
-// }
+func inView(v View, x, y int) bool {
+	x1, y1, w, h := v.Pos()
+	return x1 <= x && x < x1+w && y1 <= y && y < y1+h
+}

@@ -11,8 +11,9 @@ import (
 )
 
 type editor struct {
-	x1, y1 int
-	x2, y2 int
+	x, y   int
+	width  int
+	height int
 	style  tcell.Style
 
 	// editing buffer
@@ -33,18 +34,6 @@ type editor struct {
 	findIndex int // index of the matching result
 }
 
-func (e *editor) ClearFind() {
-	e.findKey = ""
-	e.findMatch = nil
-}
-
-func (e *editor) SetPos(x, y, width, height int) {
-	e.x1 = x
-	e.y1 = y
-	e.x2 = x + width - 1
-	e.y2 = y + height - 1
-}
-
 func newEditor(filename string) *editor {
 	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	e := &editor{
@@ -58,22 +47,21 @@ func newEditor(filename string) *editor {
 		},
 	}
 
-	if filename == "" {
-		return e
+	var a [][]byte
+	if filename != "" {
+		src, err := os.ReadFile(filename)
+		if err != nil {
+			logger.Println(err)
+			e.buf = append(e.buf, []rune{})
+			return e
+		}
+		a = bytes.Split(src, []byte{'\n'})
 	}
 
-	src, err := os.ReadFile(filename)
-	if err != nil {
-		logger.Println(err)
-		e.buf = append(e.buf, []rune{})
-		return e
-	}
-	a := bytes.Split(src, []byte{'\n'})
 	e.buf = make([][]rune, len(a))
 	for i := range a {
 		e.buf[i] = []rune(string(a[i]))
 	}
-
 	if len(e.buf) == 0 || len(e.buf[len(e.buf)-1]) != 0 {
 		// file ends with a new line
 		e.buf = append(e.buf, []rune{})
@@ -162,15 +150,15 @@ func (e *editor) Render() {
 	for i := len(e.buf); i > 0; i = i / 10 {
 		lineBarWidth++
 	}
-	e.lineBar.x1 = e.x1
-	e.lineBar.y1 = e.y1
-	e.lineBar.x2 = e.x1 + lineBarWidth
-	e.lineBar.y2 = e.y2
+	e.lineBar.x1 = e.x
+	e.lineBar.y1 = e.y
+	e.lineBar.x2 = e.x + lineBarWidth
+	e.lineBar.y2 = e.y + e.height - 1
 
-	e.bx1 = e.x1 + lineBarWidth
-	e.by1 = e.y1
-	e.bx2 = e.x2
-	e.by2 = e.y2
+	e.bx1 = e.x + lineBarWidth
+	e.by1 = e.y
+	e.bx2 = e.x + e.width - 1
+	e.by2 = e.y + e.height - 1
 
 	e.lineBar.startLine = e.startLine
 	endLine := e.startLine + e.PageSize() - 1
@@ -610,22 +598,31 @@ func (e *editor) HandleEvent(ev tcell.Event) {
 			e.deleteToLineStart()
 		case tcell.KeyCtrlK:
 			e.deleteToLineEnd()
-		case tcell.KeyESC:
-			// if _, ok := e.jo.statusBar.(*findBar); ok {
-			// 	e.ClearFind()
-			// 	e.Render()
-			// }
-			// if _, ok := e.jo.statusBar.(*statusBar); !ok {
-			// 	e.jo.statusBar = newStatusBar(e.jo)
-			// }
 		}
 	}
 }
 
-func (e *editor) Pos() (x1, y1, width, height int) { return e.x1, e.y1, e.x2 - e.x1, e.y2 - e.y1 }
+func (e *editor) Pos() (x1, y1, width, height int) {
+	return e.x, e.y, e.width, e.height
+}
+
 func (e *editor) LostFocus() {
 	// TODO: format
 }
+
+func (e *editor) ClearFind() {
+	e.findKey = ""
+	e.findMatch = nil
+}
+
+func (e *editor) SetPos(x, y, width, height int) {
+	e.x = x
+	e.y = y
+	e.width = width
+	e.height = height
+}
+
+func (e *editor) Fixed() bool { return false }
 
 type lineBar struct {
 	x1, y1    int

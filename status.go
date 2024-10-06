@@ -13,12 +13,16 @@ type statusBar struct {
 	height int
 }
 
-func newStatusBar(j *Jo) *statusBar { return &statusBar{j: j} }
+func newStatusBar(j *Jo) *statusBar {
+	return &statusBar{j: j, height: 1}
+}
+
+func (b *statusBar) Fixed() bool { return true }
+
 func (b *statusBar) SetPos(x, y, width, height int) {
 	b.x = x
 	b.y = y
 	b.width = width
-	b.height = height
 }
 
 func (b *statusBar) Render() {
