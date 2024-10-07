@@ -120,7 +120,7 @@ func (s *saveBar) HandleEvent(ev tcell.Event) {
 			s.jo.titleBar.Set(filename)
 			s.jo.titleBar.Draw()
 		}
-		s.jo.statusBar = newStatusBar(s.jo)
+		s.jo.status.Set(newStatusBar(s.jo))
 		s.jo.focus = s.jo.editor
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		if s.jo.editor.filename != "" {
@@ -131,7 +131,7 @@ func (s *saveBar) HandleEvent(ev tcell.Event) {
 		}
 		s.filename = s.filename[:len(s.filename)-1]
 	case tcell.KeyESC:
-		s.jo.statusBar = newStatusBar(s.jo)
+		s.jo.status.Set(newStatusBar(s.jo))
 		s.jo.focus = s.jo.editor
 	}
 }

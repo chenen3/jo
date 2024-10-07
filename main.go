@@ -8,18 +8,21 @@ import (
 )
 
 type Jo struct {
-	stack     *vstack
-	titleBar  *titleBar
-	editor    *editor
-	statusBar View
-	focus     View // handle event
-	done      chan struct{}
+	titleBar *titleBar
+	editor   *editor
+	status   *statusView
+	focus    View // handle event
+	done     chan struct{}
 }
 
-func (j *Jo) replaceStatus(v View) {
-	x, y, w, h := j.statusBar.Pos()
+type statusView struct {
+	View
+}
+
+func (s *statusView) Set(v View) {
+	x, y, w, h := s.Pos()
 	v.SetPos(x, y, w, h)
-	j.statusBar = v
+	s.View = v
 }
 
 var logger *log.Logger
@@ -63,8 +66,9 @@ func main() {
 	}
 	j.titleBar = newTitleBar(j, filename)
 	j.editor = newEditor(filename)
-	j.statusBar = newStatusBar(j)
-	j.stack = VStack(j.titleBar, j.editor, j.statusBar)
+	j.status = &statusView{newStatusBar(j)}
+
+	stack := VStack(j.titleBar, j.editor, j.status)
 
 	j.focus = j.editor
 	for {
@@ -74,7 +78,7 @@ func main() {
 		default:
 		}
 
-		j.statusBar.Draw()
+		j.status.Draw()
 		j.focus.ShowCursor()
 		screen.Show()
 
@@ -82,57 +86,57 @@ func main() {
 		switch ev := ev.(type) {
 		case *tcell.EventResize:
 			width, height := screen.Size()
-			j.stack.SetPos(0, 0, width, height)
-			j.stack.Draw()
+			stack.SetPos(0, 0, width, height)
+			stack.Draw()
 			screen.Sync()
 			continue
 		case *tcell.EventKey:
 			if ev.Key() == tcell.KeyCtrlQ {
-				_, ok := j.statusBar.(*saveBar)
+				_, ok := j.status.View.(*saveBar)
 				if !ok && j.editor.dirty {
-					j.replaceStatus(newSaveBar(j, true))
-					j.focus = j.statusBar
+					j.status.Set(newSaveBar(j, true))
+					j.focus = j.status
 					continue
 				}
 				return
 			}
 			if ev.Key() == tcell.KeyCtrlF {
-				if _, ok := j.statusBar.(*findBar); !ok {
-					j.replaceStatus(newFindBar(j))
+				if _, ok := j.status.View.(*findBar); !ok {
+					j.status.Set(newFindBar(j))
 				}
-				j.focus = j.statusBar
+				j.focus = j.status
 				break
 			}
 			if ev.Key() == tcell.KeyCtrlS {
-				if _, ok := j.statusBar.(*saveBar); !ok {
-					j.replaceStatus(newSaveBar(j, false))
+				if _, ok := j.status.View.(*saveBar); !ok {
+					j.status.Set(newSaveBar(j, false))
 				}
-				j.focus = j.statusBar
+				j.focus = j.status
 				break
 			}
 			if ev.Key() == tcell.KeyCtrlP {
-				if _, ok := j.statusBar.(*gotoBar); !ok {
-					j.replaceStatus(newGotoBar(j, ""))
+				if _, ok := j.status.View.(*gotoBar); !ok {
+					j.status.Set(newGotoBar(j, ""))
 				}
-				j.focus = j.statusBar
+				j.focus = j.status
 				break
 			}
 			if ev.Key() == tcell.KeyCtrlG {
-				j.replaceStatus(newGotoBar(j, ":"))
-				j.focus = j.statusBar
+				j.status.Set(newGotoBar(j, ":"))
+				j.focus = j.status
 				break
 			}
 			if ev.Key() == tcell.KeyESC {
 				j.editor.ClearFind()
 				j.editor.Draw()
-				j.replaceStatus(newStatusBar(j))
+				j.status.Set(newStatusBar(j))
 				j.focus = j.editor
 				break
 			}
 		case *tcell.EventMouse:
 			if ev.Buttons() == tcell.Button1 {
 				x, y := ev.Position()
-				for _, v := range j.stack.Views {
+				for _, v := range stack.Views {
 					if inView(v, x, y) && j.focus != v {
 						j.focus.LostFocus()
 						j.focus = v

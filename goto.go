@@ -163,7 +163,7 @@ func (g *gotoBar) gotoLine(line int) {
 	}
 	g.jo.editor.Draw()
 	g.jo.focus = g.jo.editor
-	g.jo.replaceStatus(newStatusBar(g.jo))
+	g.jo.status.Set(newStatusBar(g.jo))
 }
 
 func (g *gotoBar) gotoFile(name string) {
@@ -174,11 +174,11 @@ func (g *gotoBar) gotoFile(name string) {
 	g.jo.editor.Draw()
 	g.jo.focus = g.jo.editor
 
-	g.jo.replaceStatus(newStatusBar(g.jo))
+	g.jo.status.Set(newStatusBar(g.jo))
 }
 
 func (g *gotoBar) LostFocus() {
-	g.jo.replaceStatus(newStatusBar(g.jo))
+	g.jo.status.Set(newStatusBar(g.jo))
 	g.jo.editor.Draw()
 }
 func (g *gotoBar) Fixed() bool {
