@@ -61,7 +61,7 @@ func main() {
 	j := &Jo{
 		done: make(chan struct{}),
 	}
-	j.titleBar = newTitleBar(filename)
+	j.titleBar = newTitleBar(j, filename)
 	j.editor = newEditor(filename)
 	j.statusBar = newStatusBar(j)
 	j.stack = VStack(j.titleBar, j.editor, j.statusBar)
@@ -74,7 +74,7 @@ func main() {
 		default:
 		}
 
-		j.statusBar.Render()
+		j.statusBar.Draw()
 		j.focus.ShowCursor()
 		screen.Show()
 
@@ -83,7 +83,7 @@ func main() {
 		case *tcell.EventResize:
 			width, height := screen.Size()
 			j.stack.SetPos(0, 0, width, height)
-			j.stack.Render()
+			j.stack.Draw()
 			screen.Sync()
 			continue
 		case *tcell.EventKey:
@@ -124,7 +124,7 @@ func main() {
 			}
 			if ev.Key() == tcell.KeyESC {
 				j.editor.ClearFind()
-				j.editor.Render()
+				j.editor.Draw()
 				j.replaceStatus(newStatusBar(j))
 				j.focus = j.editor
 				break
@@ -132,13 +132,11 @@ func main() {
 		case *tcell.EventMouse:
 			if ev.Buttons() == tcell.Button1 {
 				x, y := ev.Position()
-				if inView(j.editor, x, y) && j.focus != j.editor {
-					j.focus.LostFocus()
-					j.focus = j.editor
-				}
-				if inView(j.statusBar, x, y) && j.focus != j.statusBar {
-					j.focus.LostFocus()
-					j.focus = j.statusBar
+				for _, v := range j.stack.Views {
+					if inView(v, x, y) && j.focus != v {
+						j.focus.LostFocus()
+						j.focus = v
+					}
 				}
 			}
 		}

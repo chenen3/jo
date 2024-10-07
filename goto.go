@@ -32,7 +32,7 @@ func (g *gotoBar) SetPos(x, y, width, height int) {
 	g.width = width
 }
 
-func (g *gotoBar) Render() {
+func (g *gotoBar) Draw() {
 	style := tcell.StyleDefault.Background(tcell.ColorLightYellow).Foreground(tcell.ColorBlack)
 	for y := g.y; y < g.y+g.height; y++ {
 		for x := g.x; x < g.x+g.width; x++ {
@@ -90,7 +90,7 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 	}
 	switch k.Key() {
 	case tcell.KeyRune:
-		g.jo.editor.Render() // clear previous options
+		g.jo.editor.Draw() // clear previous options
 		g.keyword = append(g.keyword, k.Rune())
 		if g.keyword[0] == ':' {
 			return
@@ -104,7 +104,7 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 		if len(g.keyword) == 0 {
 			return
 		}
-		g.jo.editor.Render() // clear previous options
+		g.jo.editor.Draw() // clear previous options
 		g.keyword = g.keyword[:len(g.keyword)-1]
 		if len(g.keyword) == 0 {
 			return
@@ -161,23 +161,17 @@ func (g *gotoBar) gotoLine(line int) {
 	} else {
 		g.jo.editor.startLine = line - g.jo.editor.PageSize()/2
 	}
-	g.jo.editor.Render()
+	g.jo.editor.Draw()
 	g.jo.focus = g.jo.editor
 	g.jo.replaceStatus(newStatusBar(g.jo))
 }
 
 func (g *gotoBar) gotoFile(name string) {
-	// x, y, w, h := g.jo.titleBar.Pos()
-	// t := newTitleBar(name)
-	// t.SetPos(x, y, w, h)
 	g.jo.titleBar.Set(name)
-	g.jo.titleBar.Render()
+	g.jo.titleBar.Draw()
 
-	e := newEditor(name)
-	x, y, w, h := g.jo.editor.Pos()
-	e.SetPos(x, y, w, h)
-	g.jo.editor = e
-	g.jo.editor.Render()
+	g.jo.editor.Load(name)
+	g.jo.editor.Draw()
 	g.jo.focus = g.jo.editor
 
 	g.jo.replaceStatus(newStatusBar(g.jo))
@@ -185,7 +179,7 @@ func (g *gotoBar) gotoFile(name string) {
 
 func (g *gotoBar) LostFocus() {
 	g.jo.replaceStatus(newStatusBar(g.jo))
-	g.jo.editor.Render()
+	g.jo.editor.Draw()
 }
 func (g *gotoBar) Fixed() bool {
 	return true

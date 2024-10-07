@@ -29,7 +29,7 @@ func (s *saveBar) SetPos(x, y, width, height int) {
 func (s *saveBar) Update(string)             {}
 func (s *saveBar) Pos() (int, int, int, int) { return s.x, s.y, s.width, s.height }
 
-func (s *saveBar) Render() {
+func (s *saveBar) Draw() {
 	style := tcell.StyleDefault.Background(tcell.ColorLightYellow).Foreground(tcell.ColorBlack)
 	for y := s.y; y < s.y+s.height; y++ {
 		for x := s.x; x < s.x+s.width; x++ {
@@ -118,7 +118,7 @@ func (s *saveBar) HandleEvent(ev tcell.Event) {
 		if s.jo.editor.filename == "" {
 			s.jo.editor.filename = filename
 			s.jo.titleBar.Set(filename)
-			s.jo.titleBar.Render()
+			s.jo.titleBar.Draw()
 		}
 		s.jo.statusBar = newStatusBar(s.jo)
 		s.jo.focus = s.jo.editor

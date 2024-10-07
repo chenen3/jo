@@ -26,7 +26,7 @@ func (f *findBar) SetPos(x, y, width, height int) {
 	f.width = width
 }
 
-func (f *findBar) Render() {
+func (f *findBar) Draw() {
 	style := tcell.StyleDefault.Background(tcell.ColorLightYellow).Foreground(tcell.ColorBlack)
 	for y := f.y; y < f.y+f.height; y++ {
 		for x := f.x; x < f.x+f.width; x++ {

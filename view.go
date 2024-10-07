@@ -6,8 +6,8 @@ import (
 
 type View interface {
 	SetPos(x, y, width, height int)
-	Pos() (x1, y1, width, height int) //TODO
-	Render()
+	Pos() (x1, y1, width, height int)
+	Draw()
 	HandleEvent(tcell.Event)
 	ShowCursor()
 	LostFocus()
@@ -31,7 +31,7 @@ func (v *vstack) SetPos(x, y, width, height int) {
 	v.height = height
 }
 
-func (v *vstack) Render() {
+func (v *vstack) Draw() {
 	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	for y := v.y; y < v.y+v.height; y++ {
 		for x := v.x; x < v.x+v.width; x++ {
@@ -67,7 +67,7 @@ func (v *vstack) Render() {
 			view.SetPos(v.x, y, v.width, avgH)
 			y += avgH
 		}
-		view.Render()
+		view.Draw()
 	}
 }
 
@@ -126,7 +126,7 @@ func (h *hstack) Render() {
 			view.SetPos(x, h.y, avgW, h.height)
 			x += avgW
 		}
-		view.Render()
+		view.Draw()
 	}
 }
 

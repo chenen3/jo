@@ -25,7 +25,7 @@ func (b *statusBar) SetPos(x, y, width, height int) {
 	b.width = width
 }
 
-func (b *statusBar) Render() {
+func (b *statusBar) Draw() {
 	style := tcell.StyleDefault.Background(tcell.ColorLightGray).Foreground(tcell.ColorBlack)
 	for y := b.y; y <= b.y+b.height-1; y++ {
 		for x := b.x; x <= b.x+b.width-1; x++ {

@@ -32,6 +32,8 @@ type editor struct {
 	findLine  int // line number when starting to find
 	findMatch [][2]int
 	findIndex int // index of the matching result
+
+	lastPos map[string][3]int // filename: [startline, line, column]
 }
 
 func newEditor(filename string) *editor {
@@ -45,6 +47,7 @@ func newEditor(filename string) *editor {
 		lineBar: &lineBar{
 			style: style.Foreground(tcell.ColorGray),
 		},
+		lastPos: make(map[string][3]int),
 	}
 
 	var a [][]byte
@@ -145,7 +148,7 @@ func (e *editor) renderLine(line int) {
 	}
 }
 
-func (e *editor) Render() {
+func (e *editor) Draw() {
 	lineBarWidth := 2
 	for i := len(e.buf); i > 0; i = i / 10 {
 		lineBarWidth++
@@ -277,7 +280,7 @@ func (e *editor) cursorUp() {
 	if e.line == e.startLine {
 		e.startLine--
 		e.cursorLineAdd(-1)
-		e.Render()
+		e.Draw()
 		return
 	}
 	e.cursorLineAdd(-1)
@@ -296,7 +299,7 @@ func (e *editor) cursorDown() {
 
 	e.startLine++
 	e.cursorLineAdd(1)
-	e.Render()
+	e.Draw()
 }
 
 // go to the first non-whitespace character in line
@@ -326,7 +329,7 @@ func (e *editor) scrollUp(delta int) {
 	} else {
 		e.startLine -= delta
 	}
-	e.Render()
+	e.Draw()
 }
 
 func (e *editor) scrollDown(delta int) {
@@ -338,7 +341,7 @@ func (e *editor) scrollDown(delta int) {
 	} else {
 		e.startLine += delta
 	}
-	e.Render()
+	e.Draw()
 }
 
 func (e *editor) write(r rune) {
@@ -384,7 +387,7 @@ func (e *editor) deleteLeft() {
 		e.buf = append(e.buf[:e.line-1], e.buf[e.line:]...)
 		e.cursorLineAdd(-1)
 		e.cursorColAdd(1 + len(prevLine) - e.column)
-		e.Render()
+		e.Draw()
 		return
 	}
 
@@ -430,7 +433,7 @@ func (e *editor) cursorEnter() {
 	e.buf = append(append(e.buf[:e.line], newText), buf...)
 	e.cursorLineAdd(1)
 	e.cursorLineStart()
-	e.Render()
+	e.Draw()
 }
 
 // A newline is appended if the last character of buffer is not
@@ -478,7 +481,7 @@ func (e *editor) Find(s string) {
 	if len(match) == 0 {
 		return
 	}
-	defer e.Render()
+	defer e.Draw()
 
 	// jump to the nearest matching line
 	var minGap = len(e.buf)
@@ -531,7 +534,7 @@ func (e *editor) FindNext() {
 	}
 	// place the cursor at the end of the matching word for easy editing
 	e.column = j + len(e.findKey) + 1
-	e.Render()
+	e.Draw()
 }
 
 func (e *editor) FindPrev() {
@@ -554,7 +557,7 @@ func (e *editor) FindPrev() {
 	}
 	// place the cursor at the end of the matching word for easy editing
 	e.column = j + len(e.findKey) + 1
-	e.Render()
+	e.Draw()
 }
 
 func (e *editor) HandleEvent(ev tcell.Event) {
@@ -628,6 +631,44 @@ func (e *editor) SetPos(x, y, width, height int) {
 }
 
 func (e *editor) Fixed() bool { return false }
+
+func (e *editor) Load(filename string) {
+	if filename == "" {
+		return
+	}
+	if filename == e.filename {
+		return
+	}
+
+	src, err := os.ReadFile(filename)
+	if err != nil {
+		logger.Println(err)
+		return
+	}
+	a := bytes.Split(src, []byte{'\n'})
+
+	e.buf = e.buf[:0]
+	for i := range a {
+		e.buf = append(e.buf, []rune(string(a[i])))
+	}
+	if len(e.buf) == 0 || len(e.buf[len(e.buf)-1]) != 0 {
+		// file ends with a new line
+		e.buf = append(e.buf, []rune{})
+	}
+
+	// restore cursor position
+	e.lastPos[e.filename] = [3]int{e.startLine, e.line, e.column}
+	e.filename = filename
+	if pos, ok := e.lastPos[filename]; ok {
+		e.startLine = pos[0]
+		e.line = pos[1]
+		e.column = pos[2]
+	} else {
+		e.startLine = 1
+		e.line = 1
+		e.column = 1
+	}
+}
 
 type lineBar struct {
 	x1, y1    int
