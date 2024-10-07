@@ -124,20 +124,7 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 				logger.Printf("goto: invalid line number: %s", err)
 				return
 			}
-			if line < 1 || line > len(g.jo.editor.buf)+1 {
-				logger.Printf("goto: line number out of range")
-				return
-			}
-			g.jo.editor.line = line
-			g.jo.editor.column = 1
-			if line <= g.jo.editor.PageSize()/2 {
-				g.jo.editor.startLine = 1
-			} else {
-				g.jo.editor.startLine = line - g.jo.editor.PageSize()/2
-			}
-			g.jo.editor.Render()
-			g.jo.focus = g.jo.editor
-			g.jo.replaceStatus(newStatusBar(g.jo))
+			g.gotoLine(line)
 			return
 		}
 		if len(g.keyword) > 0 && g.keyword[0] == '@' {
@@ -145,20 +132,7 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 			return
 		}
 		if len(g.options) > 0 {
-			x, y, w, h := g.jo.titleBar.Pos()
-			t := newTitleBar(g.options[g.index])
-			t.SetPos(x, y, w, h)
-			g.jo.titleBar = t
-			g.jo.titleBar.Render()
-
-			e := newEditor(g.options[g.index])
-			x, y, w, h = g.jo.editor.Pos()
-			e.SetPos(x, y, w, h)
-			g.jo.editor = e
-			g.jo.editor.Render()
-			g.jo.focus = g.jo.editor
-
-			g.jo.replaceStatus(newStatusBar(g.jo))
+			g.gotoFile(g.options[g.index])
 		}
 	case tcell.KeyUp:
 		if g.index == len(projectFiles)-1 {
@@ -173,6 +147,40 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 		}
 		g.index--
 	}
+}
+
+func (g *gotoBar) gotoLine(line int) {
+	if line < 1 || line > len(g.jo.editor.buf)+1 {
+		logger.Printf("goto: line number out of range")
+		return
+	}
+	g.jo.editor.line = line
+	g.jo.editor.column = 1
+	if line <= g.jo.editor.PageSize()/2 {
+		g.jo.editor.startLine = 1
+	} else {
+		g.jo.editor.startLine = line - g.jo.editor.PageSize()/2
+	}
+	g.jo.editor.Render()
+	g.jo.focus = g.jo.editor
+	g.jo.replaceStatus(newStatusBar(g.jo))
+}
+
+func (g *gotoBar) gotoFile(name string) {
+	// x, y, w, h := g.jo.titleBar.Pos()
+	// t := newTitleBar(name)
+	// t.SetPos(x, y, w, h)
+	g.jo.titleBar.Set(name)
+	g.jo.titleBar.Render()
+
+	e := newEditor(name)
+	x, y, w, h := g.jo.editor.Pos()
+	e.SetPos(x, y, w, h)
+	g.jo.editor = e
+	g.jo.editor.Render()
+	g.jo.focus = g.jo.editor
+
+	g.jo.replaceStatus(newStatusBar(g.jo))
 }
 
 func (g *gotoBar) LostFocus() {

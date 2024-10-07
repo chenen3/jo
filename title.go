@@ -5,11 +5,12 @@ import "github.com/gdamore/tcell/v2"
 type titleBar struct {
 	x, y          int
 	width, height int
-	name          string
+	names         []string
+	index         int // index of current title
 }
 
 func newTitleBar(name string) *titleBar {
-	return &titleBar{name: name, height: 1}
+	return &titleBar{names: []string{name}, height: 1}
 }
 func (t *titleBar) HandleEvent(tcell.Event) {}
 func (t *titleBar) ShowCursor()             {}
@@ -27,18 +28,46 @@ func (t *titleBar) Pos() (x1, y1, width, height int) {
 }
 
 func (t *titleBar) Render() {
-	style := tcell.StyleDefault.Background(tcell.ColorLightGray).Foreground(tcell.ColorBlack)
+	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	for y := t.y; y < t.y+t.height; y++ {
 		for x := t.x; x <= t.x+t.width; x++ {
 			screen.SetContent(x, y, ' ', nil, style)
 		}
 	}
 
-	title := t.name
-	if title == "" {
-		title = "untitled"
+	if len(t.names) == 0 {
+		for i, c := range "untitled" {
+			screen.SetContent(t.x+i, t.y, c, nil, style)
+		}
+		return
 	}
-	for i, c := range title {
-		screen.SetContent(t.x+i, t.y, c, nil, style)
+
+	var i int
+	for j, title := range t.names {
+		newstyle := style
+		if j == t.index {
+			newstyle = newstyle.Background(tcell.ColorLightGray).Italic(true)
+		}
+		for _, c := range title {
+			screen.SetContent(t.x+i, t.y, c, nil, newstyle)
+			i++
+		}
+		if j != len(t.names)-1 {
+			screen.SetContent(t.x+i, t.y, ' ', nil, style)
+			screen.SetContent(t.x+i+1, t.y, '|', nil, style)
+			screen.SetContent(t.x+i+2, t.y, ' ', nil, style)
+			i += 3
+		}
 	}
+}
+
+func (t *titleBar) Set(s string) {
+	for i, name := range t.names {
+		if name == s {
+			t.index = i
+			return
+		}
+	}
+	t.names = append(t.names, s)
+	t.index = len(t.names) - 1
 }
