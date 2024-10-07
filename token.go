@@ -33,32 +33,32 @@ var (
 		"append", "cap", "clear", "close", "copy", "delete", "len", "make",
 		"max", "min", "new", "panic", "print", "println", "recover",
 	}
-	defaultColor = tcell.ColorReset
-	colors       = map[string]tcell.Color{
-		tcKeyword:     tcell.ColorDarkRed,
-		tcType:        tcell.ColorDarkRed,
-		tcOperator:    tcell.ColorDarkRed,
-		tcInt:         tcell.ColorRoyalBlue,
-		tcRune:        tcell.ColorRoyalBlue,
-		tcString:      tcell.ColorRebeccaPurple,
-		tcFunction:    tcell.ColorDarkGreen,
-		tcFuncBuiltin: tcell.ColorRebeccaPurple,
-		tcComment:     tcell.ColorGray,
+	defaultStyle = (tcell.Style{}).Foreground(tcell.ColorReset)
+	styles       = map[string]tcell.Style{
+		tcKeyword:     (tcell.Style{}).Foreground(tcell.ColorDarkRed).Italic(true),
+		tcType:        (tcell.Style{}).Foreground(tcell.ColorDarkRed),
+		tcOperator:    (tcell.Style{}).Foreground(tcell.ColorDarkRed),
+		tcInt:         (tcell.Style{}).Foreground(tcell.ColorRoyalBlue),
+		tcRune:        (tcell.Style{}).Foreground(tcell.ColorRoyalBlue),
+		tcString:      (tcell.Style{}).Foreground(tcell.ColorRebeccaPurple),
+		tcFunction:    (tcell.Style{}).Foreground(tcell.ColorDarkGreen),
+		tcFuncBuiltin: (tcell.Style{}).Foreground(tcell.ColorRebeccaPurple),
+		tcComment:     (tcell.Style{}).Foreground(tcell.ColorGray),
 	}
 )
-
-func tokenColor(class string) tcell.Color {
-	color, ok := colors[class]
-	if !ok {
-		color = defaultColor
-	}
-	return color
-}
 
 type tokenInfo struct {
 	class string
 	off   int // offset of the token in the line
 	len   int
+}
+
+func (t *tokenInfo) Style() tcell.Style {
+	s, ok := styles[t.class]
+	if !ok {
+		return defaultStyle
+	}
+	return s
 }
 
 func parseToken(line []rune) []tokenInfo {

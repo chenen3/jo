@@ -111,11 +111,12 @@ func (e *editor) renderLine(line int) {
 	i := 0
 	tabs := leadingTabs(text)
 	padding := 0
-	style := e.style.Foreground(tokenColor(tokens[i].class))
+	_, bg, _ := e.style.Decompose()
+	style := tokens[i].Style().Background(bg)
 	for j := range text {
 		if j >= tokens[i].off+tokens[i].len && i < len(tokens)-1 {
 			i++
-			style = style.Foreground(tokenColor(tokens[i].class))
+			style = tokens[i].Style().Background(bg)
 		}
 
 		if len(inLineMatch) > 0 && mi < len(inLineMatch) {
@@ -128,7 +129,6 @@ func (e *editor) renderLine(line int) {
 			} else if j >= inLineMatch[mi][1]+len(e.findKey) {
 				mi++
 				// restore
-				_, bg, _ := e.style.Decompose()
 				style = style.Background(bg)
 			}
 		}
