@@ -4,24 +4,24 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-type titleBar struct {
+type tabBar struct {
 	jo            *Jo
 	x, y          int
 	width, height int
 	names         []string
-	index         int // index of current title
+	index         int // indicate current tab
 }
 
-func newTitleBar(j *Jo, name string) *titleBar {
-	t := &titleBar{jo: j, height: 1}
+func newTabBar(j *Jo, name string) *tabBar {
+	t := &tabBar{jo: j, height: 1}
 	if name != "" {
 		t.names = append(t.names, name)
 	}
 	return t
 }
 
-// close current editor and load the next one
-func (t *titleBar) Close() {
+// close current tab
+func (t *tabBar) Close() {
 	if len(t.names) == 0 {
 		return
 	}
@@ -44,7 +44,7 @@ func (t *titleBar) Close() {
 	t.jo.Draw()
 }
 
-func (t *titleBar) HandleEvent(e tcell.Event) {
+func (t *tabBar) HandleEvent(e tcell.Event) {
 	m, ok := e.(*tcell.EventMouse)
 	if !ok {
 		return
@@ -75,21 +75,21 @@ func (t *titleBar) HandleEvent(e tcell.Event) {
 	}
 }
 
-func (t *titleBar) ShowCursor() {}
-func (t *titleBar) LostFocus()  {}
-func (t *titleBar) Fixed() bool { return true }
+func (t *tabBar) ShowCursor() {}
+func (t *tabBar) LostFocus()  {}
+func (t *tabBar) Fixed() bool { return true }
 
-func (t *titleBar) SetPos(x, y, width, height int) {
+func (t *tabBar) SetPos(x, y, width, height int) {
 	t.x = x
 	t.y = y
 	t.width = width
 }
 
-func (t *titleBar) Pos() (x1, y1, width, height int) {
+func (t *tabBar) Pos() (x1, y1, width, height int) {
 	return t.x, t.y, t.width, t.height
 }
 
-func (t *titleBar) Draw() {
+func (t *tabBar) Draw() {
 	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	for y := t.y; y < t.y+t.height; y++ {
 		for x := t.x; x <= t.x+t.width; x++ {
@@ -105,12 +105,12 @@ func (t *titleBar) Draw() {
 	}
 
 	var i int
-	for j, title := range t.names {
+	for j, name := range t.names {
 		newstyle := style
 		if j == t.index {
 			newstyle = newstyle.Background(tcell.ColorLightGray).Italic(true)
 		}
-		for _, c := range title {
+		for _, c := range name {
 			screen.SetContent(t.x+i, t.y, c, nil, newstyle)
 			i++
 		}
@@ -123,7 +123,7 @@ func (t *titleBar) Draw() {
 	}
 }
 
-func (t *titleBar) Set(s string) {
+func (t *tabBar) Set(s string) {
 	for i, name := range t.names {
 		if name == s {
 			t.index = i

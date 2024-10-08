@@ -117,8 +117,8 @@ func (s *saveBar) HandleEvent(ev tcell.Event) {
 		}
 		if s.jo.editor.filename == "" {
 			s.jo.editor.filename = filename
-			s.jo.titleBar.Set(filename)
-			s.jo.titleBar.Draw()
+			s.jo.tabBar.Set(filename)
+			s.jo.tabBar.Draw()
 		}
 		s.jo.status.Set(newStatusBar(s.jo))
 		s.jo.focus = s.jo.editor

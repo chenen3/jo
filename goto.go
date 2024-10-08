@@ -160,6 +160,7 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 		g.index--
 	case tcell.KeyESC:
 		g.LostFocus()
+		g.jo.focus = g.jo.editor
 	}
 }
 
@@ -181,8 +182,8 @@ func (g *gotoBar) gotoLine(line int) {
 }
 
 func (g *gotoBar) gotoFile(name string) {
-	g.jo.titleBar.Set(name)
-	g.jo.titleBar.Draw()
+	g.jo.tabBar.Set(name)
+	g.jo.tabBar.Draw()
 
 	g.jo.editor.Load(name)
 	g.jo.editor.Draw()
