@@ -22,7 +22,7 @@ type gotoBar struct {
 }
 
 func newGotoBar(j *Jo, keyword string) *gotoBar {
-	once.Do(initFilenames)
+	once.Do(loadFileList)
 	return &gotoBar{jo: j, keyword: []rune(keyword), height: 1}
 }
 
@@ -33,7 +33,7 @@ func (g *gotoBar) SetPos(x, y, width, height int) {
 }
 
 func (g *gotoBar) Draw() {
-	style := tcell.StyleDefault.Background(tcell.ColorLightYellow).Foreground(tcell.ColorBlack)
+	style := tcell.StyleDefault.Background(tcell.ColorLightGray).Foreground(tcell.ColorBlack)
 	for y := g.y; y < g.y+g.height; y++ {
 		for x := g.x; x < g.x+g.width; x++ {
 			screen.SetContent(x, y, ' ', nil, style)
@@ -59,19 +59,19 @@ func (g *gotoBar) Draw() {
 	}
 
 	if len(g.keyword) == 0 {
-		g.options = projectFiles
+		g.options = files
 	}
 	for i, name := range g.options {
-		optionStyle := style
+		selectedStyle := style
 		if i == g.index {
-			optionStyle = style.Background(tcell.ColorYellow)
+			selectedStyle = style.Background(tcell.ColorBlue)
 		}
 		for j, c := range name {
-			screen.SetContent(g.x+j, g.y-1-i, c, nil, optionStyle)
+			screen.SetContent(g.x+j, g.y-1-i, c, nil, selectedStyle)
 		}
 		// padding
 		for j := 0; j < 40-len(name); j++ {
-			screen.SetContent(g.x+len(name)+j, g.y-1-i, ' ', nil, optionStyle)
+			screen.SetContent(g.x+len(name)+j, g.y-1-i, ' ', nil, selectedStyle)
 		}
 	}
 
@@ -99,7 +99,13 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 			// TODO
 			return
 		}
-		g.options = findFile(string(g.keyword))
+		options := make([]string, 0, len(files))
+		for _, f := range files {
+			if strings.Contains(strings.ToLower(f), string(g.keyword)) {
+				options = append(options, f)
+			}
+		}
+		g.options = options
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		if len(g.keyword) == 0 {
 			return
@@ -116,7 +122,13 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 			// TODO
 			return
 		}
-		g.options = findFile(string(g.keyword))
+		options := make([]string, 0, len(files))
+		for _, f := range files {
+			if strings.Contains(strings.ToLower(f), string(g.keyword)) {
+				options = append(options, f)
+			}
+		}
+		g.options = options
 	case tcell.KeyEnter:
 		if len(g.keyword) > 0 && g.keyword[0] == ':' {
 			line, err := strconv.Atoi(string(g.keyword[1:]))
@@ -135,14 +147,14 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 			g.gotoFile(g.options[g.index])
 		}
 	case tcell.KeyUp:
-		if g.index == len(projectFiles)-1 {
+		if g.index == len(files)-1 {
 			g.index = 0
 			return
 		}
 		g.index++
 	case tcell.KeyDown:
 		if g.index == 0 {
-			g.index = len(projectFiles) - 1
+			g.index = len(files) - 1
 			return
 		}
 		g.index--
@@ -185,10 +197,10 @@ func (g *gotoBar) Fixed() bool {
 	return true
 }
 
-var projectFiles []string
+var files []string
 var once sync.Once
 
-func initFilenames() {
+func loadFileList() {
 	dirs, err := os.ReadDir(".")
 	if err != nil {
 		logger.Print(err)
@@ -201,16 +213,6 @@ func initFilenames() {
 		if d.IsDir() {
 			continue
 		}
-		projectFiles = append(projectFiles, d.Name())
+		files = append(files, d.Name())
 	}
-}
-
-func findFile(name string) []string {
-	var s []string
-	for _, f := range projectFiles {
-		if strings.Contains(strings.ToLower(f), name) {
-			s = append(s, f)
-		}
-	}
-	return s
 }

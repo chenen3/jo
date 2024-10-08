@@ -15,16 +15,6 @@ type Jo struct {
 	done     chan struct{}
 }
 
-type statusView struct {
-	View
-}
-
-func (s *statusView) Set(v View) {
-	x, y, w, h := s.Pos()
-	v.SetPos(x, y, w, h)
-	s.View = v
-}
-
 var logger *log.Logger
 var screen tcell.Screen
 
