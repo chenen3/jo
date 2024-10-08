@@ -71,10 +71,12 @@ func (v *vstack) Draw() {
 	}
 }
 
-func (v *vstack) Pos() (x1, y1, x2, y2 int) { return v.x, v.y, v.x + v.width - 1, v.y + v.height - 1 }
-func (v *vstack) HandleEvent(tcell.Event)   {}
-func (v *vstack) ShowCursor()               {}
-func (v *vstack) LostFocus()                {}
+func (v *vstack) Pos() (x1, y1, x2, y2 int) {
+	return v.x, v.y, v.x + v.width - 1, v.y + v.height - 1
+}
+func (v *vstack) HandleEvent(tcell.Event) {}
+func (v *vstack) ShowCursor()             {}
+func (v *vstack) LostFocus()              {}
 
 type hstack struct {
 	x, y          int

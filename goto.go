@@ -158,6 +158,8 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 			return
 		}
 		g.index--
+	case tcell.KeyESC:
+		g.LostFocus()
 	}
 }
 
@@ -193,6 +195,7 @@ func (g *gotoBar) LostFocus() {
 	g.jo.status.Set(newStatusBar(g.jo))
 	g.jo.editor.Draw()
 }
+
 func (g *gotoBar) Fixed() bool {
 	return true
 }

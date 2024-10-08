@@ -11,6 +11,7 @@ import (
 )
 
 type editor struct {
+	jo     *Jo
 	x, y   int
 	width  int
 	height int
@@ -34,11 +35,15 @@ type editor struct {
 	findIndex int // index of the matching result
 
 	lastPos map[string][3]int // filename: [startline, line, column]
+
+	tokens   []string
+	suggestI int
 }
 
-func newEditor(filename string) *editor {
+func newEditor(j *Jo, filename string) *editor {
 	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	e := &editor{
+		jo:        j,
 		style:     style,
 		startLine: 1,
 		line:      1,
@@ -47,7 +52,9 @@ func newEditor(filename string) *editor {
 		lineBar: &lineBar{
 			style: style.Foreground(tcell.ColorGray),
 		},
-		lastPos: make(map[string][3]int),
+		lastPos:  make(map[string][3]int),
+		tokens:   []string{"token1", "token2", "token3", "token4"},
+		suggestI: -1,
 	}
 
 	if filename == "" {
@@ -346,7 +353,7 @@ func (e *editor) scrollDown(delta int) {
 	e.Draw()
 }
 
-func (e *editor) write(r rune) {
+func (e *editor) writeRune(r rune) {
 	text := e.buf[e.line-1]
 	rs := make([]rune, len(text[e.column-1:]))
 	copy(rs, text[e.column-1:])
@@ -354,6 +361,17 @@ func (e *editor) write(r rune) {
 	e.buf[e.line-1] = text
 	e.renderLine(e.line)
 	e.cursorColAdd(1)
+	e.dirty = true
+}
+
+func (e *editor) writeString(s string) {
+	text := e.buf[e.line-1]
+	rs := make([]rune, len(text[e.column-1:]))
+	copy(rs, text[e.column-1:])
+	text = append(append(text[:e.column-1], []rune(s)...), rs...)
+	e.buf[e.line-1] = text
+	e.renderLine(e.line)
+	e.cursorColAdd(len(s))
 	e.dirty = true
 }
 
@@ -589,18 +607,52 @@ func (e *editor) HandleEvent(ev tcell.Event) {
 		case tcell.KeyEnd:
 			e.cursorLineEnd()
 		case tcell.KeyUp:
+			if e.suggestI >= 0 {
+				if e.line-e.startLine < len(e.tokens) {
+					e.suggestI--
+				} else {
+					e.suggestI++
+				}
+				if e.suggestI == -1 {
+					e.suggestI = len(e.tokens) - 1
+				} else if e.suggestI == len(e.tokens) {
+					e.suggestI = 0
+				}
+				e.showSuggestion()
+				break
+			}
 			e.cursorUp()
 		case tcell.KeyDown:
+			if e.suggestI >= 0 {
+				if e.line-e.startLine < len(e.tokens) {
+					e.suggestI++
+				} else {
+					e.suggestI--
+				}
+				if e.suggestI == -1 {
+					e.suggestI = len(e.tokens) - 1
+				} else if e.suggestI == len(e.tokens) {
+					e.suggestI = 0
+				}
+				e.showSuggestion()
+				break
+			}
 			e.cursorDown()
 		case tcell.KeyLeft:
 			e.cursorColAdd(-1)
 		case tcell.KeyRight:
 			e.cursorColAdd(1)
 		case tcell.KeyRune:
-			e.write(ev.Rune())
+			e.writeRune(ev.Rune())
 		case tcell.KeyTab:
-			e.write('\t')
+			e.writeRune('\t')
 		case tcell.KeyEnter:
+			if e.suggestI >= 0 {
+				e.writeString(e.tokens[e.suggestI])
+				e.suggestI = -1
+				e.Draw() // TODO: no need to refresh the whole screen
+				break
+			}
 			e.cursorEnter()
 		case tcell.KeyBackspace, tcell.KeyBackspace2:
 			e.deleteLeft()
@@ -608,6 +660,44 @@ func (e *editor) HandleEvent(ev tcell.Event) {
 			e.deleteToLineStart()
 		case tcell.KeyCtrlK:
 			e.deleteToLineEnd()
+		case tcell.KeyESC:
+			if e.findKey != "" {
+				e.ClearFind()
+				e.Draw()
+				e.jo.status.Set(newStatusBar(e.jo))
+			} else if e.suggestI >= 0 {
+				e.suggestI = -1
+				e.Draw()
+			}
+		case tcell.KeyCtrlBackslash:
+			e.suggestI = 0
+			e.showSuggestion()
+		}
+	}
+}
+
+func (e *editor) showSuggestion() {
+	width := 30
+	x := e.bx1 + e.Column() - 1
+	y := e.by1 + e.Line() - 1
+	for i, token := range e.tokens {
+		style := tcell.StyleDefault.Background(tcell.ColorLightGray).Foreground(tcell.ColorBlack)
+		if i == e.suggestI {
+			style = style.Background(tcell.ColorBlue)
+		}
+		var yy int
+		if e.line-e.startLine < len(e.tokens) {
+			// list down
+			yy = y + 1 + i
+		} else {
+			// list up
+			yy = y - 1 - i
+		}
+		for j, c := range token {
+			screen.SetContent(x+j+1, yy, c, nil, style)
+		}
+		for padding := width - len(token); padding > 0; padding-- {
+			screen.SetContent(x+width-padding+1, yy, ' ', nil, style)
 		}
 	}
 }

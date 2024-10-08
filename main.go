@@ -60,7 +60,7 @@ func main() {
 		done: make(chan struct{}),
 	}
 	j.titleBar = newTitleBar(j, filename)
-	j.editor = newEditor(filename)
+	j.editor = newEditor(j, filename)
 	j.status = &statusView{newStatusBar(j)}
 	j.stack = VStack(j.titleBar, j.editor, j.status)
 
@@ -122,13 +122,6 @@ func main() {
 			}
 			if ev.Key() == tcell.KeyCtrlW {
 				j.titleBar.Close()
-			}
-			if ev.Key() == tcell.KeyESC {
-				j.editor.ClearFind()
-				j.editor.Draw()
-				j.status.Set(newStatusBar(j))
-				j.focus = j.editor
-				break
 			}
 		case *tcell.EventMouse:
 			if ev.Buttons() == tcell.Button1 {
