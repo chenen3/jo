@@ -13,6 +13,11 @@ type Jo struct {
 	status   *statusView
 	focus    View // handle event
 	done     chan struct{}
+	stack    *vstack // layout
+}
+
+func (j *Jo) Draw() {
+	j.stack.Draw()
 }
 
 var logger *log.Logger
@@ -57,8 +62,7 @@ func main() {
 	j.titleBar = newTitleBar(j, filename)
 	j.editor = newEditor(filename)
 	j.status = &statusView{newStatusBar(j)}
-
-	stack := VStack(j.titleBar, j.editor, j.status)
+	j.stack = VStack(j.titleBar, j.editor, j.status)
 
 	j.focus = j.editor
 	for {
@@ -76,8 +80,8 @@ func main() {
 		switch ev := ev.(type) {
 		case *tcell.EventResize:
 			width, height := screen.Size()
-			stack.SetPos(0, 0, width, height)
-			stack.Draw()
+			j.stack.SetPos(0, 0, width, height)
+			j.Draw()
 			screen.Sync()
 			continue
 		case *tcell.EventKey:
@@ -116,6 +120,9 @@ func main() {
 				j.focus = j.status
 				break
 			}
+			if ev.Key() == tcell.KeyCtrlW {
+				j.titleBar.Close()
+			}
 			if ev.Key() == tcell.KeyESC {
 				j.editor.ClearFind()
 				j.editor.Draw()
@@ -126,7 +133,7 @@ func main() {
 		case *tcell.EventMouse:
 			if ev.Buttons() == tcell.Button1 {
 				x, y := ev.Position()
-				for _, v := range stack.Views {
+				for _, v := range j.stack.Views {
 					if inView(v, x, y) && j.focus != v {
 						j.focus.LostFocus()
 						j.focus = v

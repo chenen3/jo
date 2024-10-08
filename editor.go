@@ -50,17 +50,19 @@ func newEditor(filename string) *editor {
 		lastPos: make(map[string][3]int),
 	}
 
-	var a [][]byte
-	if filename != "" {
-		src, err := os.ReadFile(filename)
-		if err != nil {
-			logger.Println(err)
-			e.buf = append(e.buf, []rune{})
-			return e
-		}
-		a = bytes.Split(src, []byte{'\n'})
+	if filename == "" {
+		e.buf = append(e.buf, []rune{})
+		return e
 	}
 
+	var a [][]byte
+	src, err := os.ReadFile(filename)
+	if err != nil {
+		logger.Println(err)
+		e.buf = append(e.buf, []rune{})
+		return e
+	}
+	a = bytes.Split(src, []byte{'\n'})
 	e.buf = make([][]rune, len(a))
 	for i := range a {
 		e.buf[i] = []rune(string(a[i]))
@@ -631,6 +633,15 @@ func (e *editor) SetPos(x, y, width, height int) {
 }
 
 func (e *editor) Fixed() bool { return false }
+
+func (e *editor) Reset() {
+	e.buf = e.buf[:0]
+	e.buf = append(e.buf, []rune{})
+	e.filename = ""
+	e.startLine = 1
+	e.line = 1
+	e.column = 1
+}
 
 func (e *editor) Load(filename string) {
 	if filename == "" {

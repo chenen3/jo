@@ -1,6 +1,8 @@
 package main
 
-import "github.com/gdamore/tcell/v2"
+import (
+	"github.com/gdamore/tcell/v2"
+)
 
 type titleBar struct {
 	jo            *Jo
@@ -11,7 +13,35 @@ type titleBar struct {
 }
 
 func newTitleBar(j *Jo, name string) *titleBar {
-	return &titleBar{jo: j, names: []string{name}, height: 1}
+	t := &titleBar{jo: j, height: 1}
+	if name != "" {
+		t.names = append(t.names, name)
+	}
+	return t
+}
+
+// close current editor and load the next one
+func (t *titleBar) Close() {
+	if len(t.names) == 0 {
+		return
+	}
+	if len(t.names) == 1 {
+		t.names = nil
+		t.jo.editor.Reset()
+		t.jo.Draw()
+		return
+	}
+
+	if t.index == len(t.names)-1 {
+		t.names = t.names[:len(t.names)-1]
+	} else {
+		t.names = append(t.names[:t.index], t.names[t.index+1:]...)
+	}
+	if t.index > len(t.names)-1 {
+		t.index = len(t.names) - 1
+	}
+	t.jo.editor.Load(t.names[t.index])
+	t.jo.Draw()
 }
 
 func (t *titleBar) HandleEvent(e tcell.Event) {
@@ -26,7 +56,6 @@ func (t *titleBar) HandleEvent(e tcell.Event) {
 	if y < t.y || y > t.y+t.height-1 {
 		return
 	}
-	// TODO: hover
 
 	// on click
 	var start, end int
@@ -37,11 +66,9 @@ func (t *titleBar) HandleEvent(e tcell.Event) {
 				return
 			}
 			t.index = i
-			t.Draw()
-
 			t.jo.editor.Load(name)
-			t.jo.editor.Draw()
 			t.jo.focus = t.jo.editor
+			t.jo.Draw()
 			return
 		}
 		start = end + 1
