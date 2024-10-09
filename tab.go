@@ -123,7 +123,7 @@ func (t *tabBar) Draw() {
 	}
 }
 
-func (t *tabBar) Set(s string) {
+func (t *tabBar) Add(s string) {
 	for i, name := range t.names {
 		if name == s {
 			t.index = i

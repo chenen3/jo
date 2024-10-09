@@ -21,6 +21,7 @@ type gotoBar struct {
 	options []string
 }
 
+// TODO: go to symbol or call command
 func newGotoBar(j *Jo, keyword string) *gotoBar {
 	once.Do(loadFileList)
 	return &gotoBar{jo: j, keyword: []rune(keyword), height: 1}
@@ -43,7 +44,7 @@ func (g *gotoBar) Draw() {
 	g.cursorY = g.y
 
 	if len(g.keyword) == 0 {
-		placeholder := "search files by name (append : to go to line or @ to go to symbol)"
+		placeholder := "search files by name (append : to go to line)"
 		for i, c := range placeholder {
 			screen.SetContent(g.cursorX+i, g.y, c, nil, style.Foreground(tcell.ColorGray))
 		}
@@ -53,8 +54,7 @@ func (g *gotoBar) Draw() {
 		g.cursorX++
 	}
 
-	if len(g.keyword) > 0 && (g.keyword[0] == ':' || g.keyword[0] == '@') {
-		// TODO
+	if len(g.keyword) > 0 && g.keyword[0] == ':' {
 		return
 	}
 
@@ -95,10 +95,6 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 		if g.keyword[0] == ':' {
 			return
 		}
-		if g.keyword[0] == '@' {
-			// TODO
-			return
-		}
 		options := make([]string, 0, len(files))
 		for _, f := range files {
 			if strings.Contains(strings.ToLower(f), string(g.keyword)) {
@@ -116,10 +112,6 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 			return
 		}
 		if g.keyword[0] == ':' {
-			return
-		}
-		if g.keyword[0] == '@' {
-			// TODO
 			return
 		}
 		options := make([]string, 0, len(files))
@@ -182,7 +174,7 @@ func (g *gotoBar) gotoLine(line int) {
 }
 
 func (g *gotoBar) gotoFile(name string) {
-	g.jo.tabBar.Set(name)
+	g.jo.tabBar.Add(name)
 	g.jo.tabBar.Draw()
 
 	g.jo.editor.Load(name)

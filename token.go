@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	gotoken "go/token"
 	"slices"
 	"strconv"
+	"unicode"
 
 	"github.com/gdamore/tcell/v2"
 )
@@ -131,4 +133,91 @@ func parseToken(line []rune) []tokenInfo {
 		lastDelim = line[i]
 	}
 	return s
+}
+
+func lastToken(s []rune, i int) []rune {
+	for _, t := range parseToken(s) {
+		if t.off <= i && i < t.off+t.len {
+			token := s[t.off : t.off+t.len]
+			if gotoken.IsIdentifier(string(token)) {
+				return token
+			}
+		}
+	}
+	return nil
+}
+
+// a tree intended for the token
+type node struct {
+	value    rune
+	parent   *node
+	children []*node
+}
+
+func (n *node) set(s string) {
+	nn := n
+	for s != "" {
+		c := rune(s[0])
+		var ok bool
+		for _, child := range nn.children {
+			if child.value == c {
+				nn = child
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			newNode := &node{parent: nn, value: c}
+			nn.children = append(nn.children, newNode)
+			nn = newNode
+		}
+		s = s[1:]
+	}
+}
+
+func (n *node) get(s string) []string {
+	if s == "" {
+		return nil
+	}
+
+	var tokens []string
+	// the deepest node that matches s
+	var nodes = n.children
+	for _, c := range s {
+		debugC := fmt.Sprintf("%c", c)
+		_ = debugC
+		var match []*node
+		for _, node := range nodes {
+			if node.value == c || unicode.ToLower(node.value) == c {
+				match = append(match, node.children...)
+			}
+		}
+		if len(match) == 0 {
+			return nil
+		}
+		nodes = match
+	}
+
+	for _, node := range nodes {
+		for _, l := range node.leafs() {
+			pValues := []rune{l.value}
+			for p := l.parent; p != nil && p.value != 0; p = p.parent {
+				pValues = append([]rune{p.value}, pValues...)
+			}
+			tokens = append(tokens, string(pValues))
+		}
+	}
+	return tokens
+}
+
+func (n *node) leafs() []*node {
+	if len(n.children) == 0 {
+		return []*node{n}
+	}
+
+	var ls []*node
+	for _, child := range n.children {
+		ls = append(ls, child.leafs()...)
+	}
+	return ls
 }

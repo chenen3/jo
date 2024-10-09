@@ -48,7 +48,7 @@ func (b *statusBar) Draw() {
 		screen.SetContent(b.x+i, b.y, c, nil, style)
 	}
 
-	text := "<ctrl+p> goto, <ctrl+f> find, <ctrl+s> save, <ctrl+q> quit"
+	text := "<tab> suggest, <ctrl+p> goto, <ctrl+f> find, <ctrl+s> save, <ctrl+q> quit"
 	for i, c := range text {
 		if i > b.width-1 {
 			break

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"go/token"
 	"io"
 	"os"
 	"strconv"
@@ -36,8 +37,11 @@ type editor struct {
 
 	lastPos map[string][3]int // filename: [startline, line, column]
 
-	tokens   []string
-	suggestI int
+	tokenTree *node
+	suggest   *struct {
+		options []string
+		i       int
+	}
 }
 
 func newEditor(j *Jo, filename string) *editor {
@@ -52,9 +56,8 @@ func newEditor(j *Jo, filename string) *editor {
 		lineBar: &lineBar{
 			style: style.Foreground(tcell.ColorGray),
 		},
-		lastPos:  make(map[string][3]int),
-		tokens:   []string{"token1", "token2", "token3", "token4"},
-		suggestI: -1,
+		lastPos:   make(map[string][3]int),
+		tokenTree: new(node),
 	}
 
 	if filename == "" {
@@ -74,8 +77,12 @@ func newEditor(j *Jo, filename string) *editor {
 	for i := range a {
 		e.buf[i] = []rune(string(a[i]))
 	}
+
+	if len(e.buf) > 0 {
+		buildTokenTree(e.tokenTree, e.buf)
+	}
+	// file ends with a new line
 	if len(e.buf) == 0 || len(e.buf[len(e.buf)-1]) != 0 {
-		// file ends with a new line
 		e.buf = append(e.buf, []rune{})
 	}
 	return e
@@ -119,16 +126,16 @@ func (e *editor) renderLine(line int) {
 		}
 	}
 
-	tokens := parseToken(text)
+	tokenInfo := parseToken(text)
 	i := 0
 	tabs := leadingTabs(text)
 	padding := 0
 	_, bg, _ := e.style.Decompose()
-	style := tokens[i].Style().Background(bg)
+	style := tokenInfo[i].Style().Background(bg)
 	for j := range text {
-		if j >= tokens[i].off+tokens[i].len && i < len(tokens)-1 {
+		if j >= tokenInfo[i].off+tokenInfo[i].len && i < len(tokenInfo)-1 {
 			i++
-			style = tokens[i].Style().Background(bg)
+			style = tokenInfo[i].Style().Background(bg)
 		}
 
 		if len(inLineMatch) > 0 && mi < len(inLineMatch) {
@@ -607,50 +614,67 @@ func (e *editor) HandleEvent(ev tcell.Event) {
 		case tcell.KeyEnd:
 			e.cursorLineEnd()
 		case tcell.KeyUp:
-			if e.suggestI >= 0 {
-				if e.line-e.startLine < len(e.tokens) {
-					e.suggestI--
-				} else {
-					e.suggestI++
-				}
-				if e.suggestI == -1 {
-					e.suggestI = len(e.tokens) - 1
-				} else if e.suggestI == len(e.tokens) {
-					e.suggestI = 0
-				}
-				e.showSuggestion()
+			if e.suggest == nil {
+				e.cursorUp()
 				break
 			}
-			e.cursorUp()
+			if e.line-e.startLine < len(e.suggest.options) {
+				e.suggest.i--
+			} else {
+				e.suggest.i++
+			}
+			if e.suggest.i == -1 {
+				e.suggest.i = len(e.suggest.options) - 1
+			} else if e.suggest.i == len(e.suggest.options) {
+				e.suggest.i = 0
+			}
+			e.showSuggestion()
+
 		case tcell.KeyDown:
-			if e.suggestI >= 0 {
-				if e.line-e.startLine < len(e.tokens) {
-					e.suggestI++
-				} else {
-					e.suggestI--
-				}
-				if e.suggestI == -1 {
-					e.suggestI = len(e.tokens) - 1
-				} else if e.suggestI == len(e.tokens) {
-					e.suggestI = 0
-				}
-				e.showSuggestion()
+			if e.suggest == nil {
+				e.cursorDown()
 				break
 			}
-			e.cursorDown()
+			if e.line-e.startLine < len(e.suggest.options) {
+				e.suggest.i++
+			} else {
+				e.suggest.i--
+			}
+			if e.suggest.i == -1 {
+				e.suggest.i = len(e.suggest.options) - 1
+			} else if e.suggest.i == len(e.suggest.options) {
+				e.suggest.i = 0
+			}
+			e.showSuggestion()
 		case tcell.KeyLeft:
 			e.cursorColAdd(-1)
 		case tcell.KeyRight:
 			e.cursorColAdd(1)
 		case tcell.KeyRune:
 			e.writeRune(ev.Rune())
-		case tcell.KeyTab:
-			e.writeRune('\t')
-		case tcell.KeyEnter:
-			if e.suggestI >= 0 {
-				e.writeString(e.tokens[e.suggestI])
-				e.suggestI = -1
+			if e.suggest != nil {
 				e.Draw() // TODO: no need to refresh the whole screen
+			}
+		case tcell.KeyTab:
+			if e.column == 1 {
+				e.writeRune('\t')
+				break
+			}
+
+			if e.suggest != nil {
+				e.accecptSuggestion()
+				break
+			}
+
+			e.loadSuggetion()
+			if len(e.suggest.options) == 1 {
+				e.accecptSuggestion()
+			} else {
+				e.showSuggestion()
+			}
+		case tcell.KeyEnter:
+			if e.suggest != nil {
+				e.accecptSuggestion()
 				break
 			}
 			e.cursorEnter()
@@ -661,45 +685,64 @@ func (e *editor) HandleEvent(ev tcell.Event) {
 		case tcell.KeyCtrlK:
 			e.deleteToLineEnd()
 		case tcell.KeyESC:
-			if e.findKey != "" {
+			if _, ok := e.jo.status.View.(*findBar); ok {
 				e.ClearFind()
 				e.Draw()
 				e.jo.status.Set(newStatusBar(e.jo))
-			} else if e.suggestI >= 0 {
-				e.suggestI = -1
-				e.Draw()
 			}
-		case tcell.KeyCtrlBackslash:
-			e.suggestI = 0
-			e.showSuggestion()
 		}
 	}
 }
 
+func (e *editor) loadSuggetion() {
+	word := string(lastToken(e.buf[e.line-1], e.column-2))
+	if len(word) == 0 {
+		return
+	}
+	e.suggest = &struct {
+		options []string
+		i       int
+	}{
+		options: e.tokenTree.get(word),
+	}
+}
+
 func (e *editor) showSuggestion() {
+	if len(e.suggest.options) == 0 {
+		return
+	}
 	width := 30
 	x := e.bx1 + e.Column() - 1
 	y := e.by1 + e.Line() - 1
-	for i, token := range e.tokens {
+	for i := range e.suggest.options {
 		style := tcell.StyleDefault.Background(tcell.ColorLightGray).Foreground(tcell.ColorBlack)
-		if i == e.suggestI {
+		if i == e.suggest.i {
 			style = style.Background(tcell.ColorBlue)
 		}
 		var yy int
-		if e.line-e.startLine < len(e.tokens) {
+		if e.line-e.startLine < len(e.suggest.options) {
 			// list down
 			yy = y + 1 + i
 		} else {
 			// list up
 			yy = y - 1 - i
 		}
-		for j, c := range token {
+		for j, c := range e.suggest.options[i] {
 			screen.SetContent(x+j+1, yy, c, nil, style)
 		}
-		for padding := width - len(token); padding > 0; padding-- {
+		for padding := width - len(e.suggest.options[i]); padding > 0; padding-- {
 			screen.SetContent(x+width-padding+1, yy, ' ', nil, style)
 		}
 	}
+}
+
+func (e *editor) accecptSuggestion() {
+	word := string(lastToken(e.buf[e.line-1], e.column-2))
+	e.buf[e.line-1] = e.buf[e.line-1][:e.column-1-len(word)]
+	e.cursorColAdd(-len(word))
+	e.writeString(e.suggest.options[e.suggest.i])
+	e.suggest = nil
+	e.Draw() // TODO: no need to refresh the whole screen
 }
 
 func (e *editor) Pos() (x1, y1, width, height int) {
@@ -752,8 +795,11 @@ func (e *editor) Load(filename string) {
 	for i := range a {
 		e.buf = append(e.buf, []rune(string(a[i])))
 	}
+	if len(e.buf) > 0 {
+		buildTokenTree(e.tokenTree, e.buf)
+	}
+	// file ends with a new line
 	if len(e.buf) == 0 || len(e.buf[len(e.buf)-1]) != 0 {
-		// file ends with a new line
 		e.buf = append(e.buf, []rune{})
 	}
 
@@ -796,6 +842,21 @@ func (b *lineBar) render() {
 			}
 			// align right
 			screen.SetContent(b.x2-(len(s)-j)-paddingRight, y+i-b.startLine, c, nil, b.style)
+		}
+	}
+}
+
+func buildTokenTree(tree *node, buf [][]rune) {
+	if tree == nil || len(buf) == 0 {
+		return
+	}
+	for i := range buf {
+		infos := parseToken(buf[i])
+		for _, info := range infos {
+			t := string(buf[i][info.off : info.off+info.len])
+			if token.IsIdentifier(t) {
+				tree.set(t)
+			}
 		}
 	}
 }

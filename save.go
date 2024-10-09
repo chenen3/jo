@@ -117,7 +117,7 @@ func (s *saveBar) HandleEvent(ev tcell.Event) {
 		}
 		if s.jo.editor.filename == "" {
 			s.jo.editor.filename = filename
-			s.jo.tabBar.Set(filename)
+			s.jo.tabBar.Add(filename)
 			s.jo.tabBar.Draw()
 		}
 		s.jo.status.Set(newStatusBar(s.jo))
