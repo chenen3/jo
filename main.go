@@ -8,12 +8,12 @@ import (
 )
 
 type Jo struct {
-	tabBar *tabBar
-	editor *editor
-	status *statusView
-	focus  View // handle event
-	done   chan struct{}
-	stack  *vstack // layout
+	editor  *editor // focused editor
+	editors *hstack
+	status  *statusView
+	focus   View // handle event
+	done    chan struct{}
+	stack   *vstack // layout
 }
 
 func (j *Jo) Draw() {
@@ -59,10 +59,12 @@ func main() {
 	j := &Jo{
 		done: make(chan struct{}),
 	}
-	j.tabBar = newTabBar(j, filename)
 	j.editor = newEditor(j, filename)
+	j.editors = HStack(
+		VStack(j.editor.titleBar, j.editor), //TODO: merge titleBar to editor
+	)
 	j.status = &statusView{newStatusBar(j)}
-	j.stack = VStack(j.tabBar, j.editor, j.status)
+	j.stack = VStack(j.editors, j.status)
 
 	j.focus = j.editor
 	for {
@@ -121,17 +123,13 @@ func main() {
 				break
 			}
 			if ev.Key() == tcell.KeyCtrlW {
-				j.tabBar.Close()
+				j.editor.Close()
+				j.Draw()
 			}
 		case *tcell.EventMouse:
 			if ev.Buttons() == tcell.Button1 {
 				x, y := ev.Position()
-				for _, v := range j.stack.Views {
-					if inView(v, x, y) && j.focus != v {
-						j.focus.LostFocus()
-						j.focus = v
-					}
-				}
+				j.stack.OnClick(x, y)
 			}
 		}
 		j.focus.HandleEvent(ev)

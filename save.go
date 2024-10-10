@@ -117,8 +117,8 @@ func (s *saveBar) HandleEvent(ev tcell.Event) {
 		}
 		if s.jo.editor.filename == "" {
 			s.jo.editor.filename = filename
-			s.jo.tabBar.Add(filename)
-			s.jo.tabBar.Draw()
+			s.jo.editor.titleBar.Add(filename)
+			s.jo.editor.titleBar.Draw()
 		}
 		s.jo.status.Set(newStatusBar(s.jo))
 		s.jo.focus = s.jo.editor
@@ -134,4 +134,12 @@ func (s *saveBar) HandleEvent(ev tcell.Event) {
 		s.jo.status.Set(newStatusBar(s.jo))
 		s.jo.focus = s.jo.editor
 	}
+}
+
+func (s *saveBar) OnClick(x, y int) {
+	if s.jo.focus == s {
+		return
+	}
+	s.jo.focus.LostFocus()
+	s.jo.focus = s
 }

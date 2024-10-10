@@ -5,6 +5,7 @@ import (
 	"go/token"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -42,6 +43,17 @@ type editor struct {
 		options []string
 		i       int
 	}
+
+	titleBar *titleBar
+}
+
+func (e *editor) OnClick(x, y int) {
+	if e.jo.focus == e {
+		return
+	}
+	e.jo.focus.LostFocus()
+	e.jo.focus = e
+	e.jo.editor = e
 }
 
 func newEditor(j *Jo, filename string) *editor {
@@ -58,6 +70,7 @@ func newEditor(j *Jo, filename string) *editor {
 		},
 		lastPos:   make(map[string][3]int),
 		tokenTree: new(node),
+		titleBar:  newTitleBar(j, filename),
 	}
 
 	if filename == "" {
@@ -88,6 +101,7 @@ func newEditor(j *Jo, filename string) *editor {
 	return e
 }
 
+// FIXME: use e.height
 // the number of lines visible in the editor view
 func (e *editor) PageSize() int { return e.by2 - e.by1 + 1 }
 
@@ -133,6 +147,9 @@ func (e *editor) renderLine(line int) {
 	_, bg, _ := e.style.Decompose()
 	style := tokenInfo[i].Style().Background(bg)
 	for j := range text {
+		if e.bx1+padding+j > e.bx2 {
+			break
+		}
 		if j >= tokenInfo[i].off+tokenInfo[i].len && i < len(tokenInfo)-1 {
 			i++
 			style = tokenInfo[i].Style().Background(bg)
@@ -165,6 +182,7 @@ func (e *editor) renderLine(line int) {
 }
 
 func (e *editor) Draw() {
+	e.titleBar.Draw()
 	lineBarWidth := 2
 	for i := len(e.buf); i > 0; i = i / 10 {
 		lineBarWidth++
@@ -349,13 +367,12 @@ func (e *editor) scrollUp(delta int) {
 }
 
 func (e *editor) scrollDown(delta int) {
-	if e.startLine == len(e.buf)-e.PageSize()+1 {
+	if e.startLine >= len(e.buf)-e.PageSize()+1 {
 		return
 	}
-	if e.startLine > len(e.buf)-e.PageSize()+1 {
+	e.startLine += delta
+	if e.startLine >= len(e.buf)-e.PageSize()+1 {
 		e.startLine = len(e.buf) - e.PageSize() + 1
-	} else {
-		e.startLine += delta
 	}
 	e.Draw()
 }
@@ -815,6 +832,37 @@ func (e *editor) Load(filename string) {
 		e.line = 1
 		e.column = 1
 	}
+
+	e.titleBar.Add(filename)
+}
+
+func (e *editor) Close() {
+	// delete editor
+	if len(e.titleBar.names) == 0 {
+		if len(e.jo.editors.Views) == 1 {
+			close(e.jo.done)
+			return
+		}
+		var i int
+		for i = range e.jo.editors.Views {
+			if vs, ok := e.jo.editors.Views[i].(*vstack); ok {
+				if vs.Views[1] == e {
+					break
+				}
+			}
+		}
+		e.jo.focus.LostFocus()
+		e.jo.focus = e.jo.editors.Views[i+1].(*vstack).Views[1]
+		e.jo.editors.Views = slices.Delete(e.jo.editors.Views, i, i+1)
+		return
+	}
+
+	e.titleBar.Close()
+	if len(e.titleBar.names) == 0 {
+		e.Reset()
+		return
+	}
+	e.Load(e.titleBar.names[e.titleBar.index])
 }
 
 type lineBar struct {

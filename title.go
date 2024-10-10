@@ -4,31 +4,37 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-type tabBar struct {
+type titleBar struct {
 	jo            *Jo
 	x, y          int
 	width, height int
 	names         []string
-	index         int // indicate current tab
+	index         int // indicate current editor
 }
 
-func newTabBar(j *Jo, name string) *tabBar {
-	t := &tabBar{jo: j, height: 1}
+func newTitleBar(j *Jo, name string) *titleBar {
+	t := &titleBar{jo: j, height: 1}
 	if name != "" {
 		t.names = append(t.names, name)
 	}
 	return t
 }
 
-// close current tab
-func (t *tabBar) Close() {
+func (t *titleBar) OnClick(x, y int) {
+	if t.jo.focus == t {
+		return
+	}
+	t.jo.focus.LostFocus()
+	t.jo.focus = t
+}
+
+// close current editor
+func (t *titleBar) Close() {
 	if len(t.names) == 0 {
 		return
 	}
 	if len(t.names) == 1 {
 		t.names = nil
-		t.jo.editor.Reset()
-		t.jo.Draw()
 		return
 	}
 
@@ -40,11 +46,9 @@ func (t *tabBar) Close() {
 	if t.index > len(t.names)-1 {
 		t.index = len(t.names) - 1
 	}
-	t.jo.editor.Load(t.names[t.index])
-	t.jo.Draw()
 }
 
-func (t *tabBar) HandleEvent(e tcell.Event) {
+func (t *titleBar) HandleEvent(e tcell.Event) {
 	m, ok := e.(*tcell.EventMouse)
 	if !ok {
 		return
@@ -75,21 +79,21 @@ func (t *tabBar) HandleEvent(e tcell.Event) {
 	}
 }
 
-func (t *tabBar) ShowCursor() {}
-func (t *tabBar) LostFocus()  {}
-func (t *tabBar) Fixed() bool { return true }
+func (t *titleBar) ShowCursor() {}
+func (t *titleBar) LostFocus()  {}
+func (t *titleBar) Fixed() bool { return true }
 
-func (t *tabBar) SetPos(x, y, width, height int) {
+func (t *titleBar) SetPos(x, y, width, height int) {
 	t.x = x
 	t.y = y
 	t.width = width
 }
 
-func (t *tabBar) Pos() (x1, y1, width, height int) {
+func (t *titleBar) Pos() (x1, y1, width, height int) {
 	return t.x, t.y, t.width, t.height
 }
 
-func (t *tabBar) Draw() {
+func (t *titleBar) Draw() {
 	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	for y := t.y; y < t.y+t.height; y++ {
 		for x := t.x; x <= t.x+t.width; x++ {
@@ -123,7 +127,7 @@ func (t *tabBar) Draw() {
 	}
 }
 
-func (t *tabBar) Add(s string) {
+func (t *titleBar) Add(s string) {
 	for i, name := range t.names {
 		if name == s {
 			t.index = i

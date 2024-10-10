@@ -131,10 +131,6 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 			g.gotoLine(line)
 			return
 		}
-		if len(g.keyword) > 0 && g.keyword[0] == '@' {
-			// TODO
-			return
-		}
 		if len(g.options) > 0 {
 			g.gotoFile(g.options[g.index])
 		}
@@ -153,6 +149,14 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 	case tcell.KeyESC:
 		g.LostFocus()
 		g.jo.focus = g.jo.editor
+	case tcell.KeyCtrlBackslash:
+		e := newEditor(g.jo, g.options[g.index])
+		g.jo.focus.LostFocus()
+		g.jo.focus = e
+		g.jo.editor = e
+		g.jo.editors.Views = append(g.jo.editors.Views, VStack(e.titleBar, e))
+		g.jo.status.Set(newStatusBar(g.jo))
+		g.jo.Draw()
 	}
 }
 
@@ -174,13 +178,9 @@ func (g *gotoBar) gotoLine(line int) {
 }
 
 func (g *gotoBar) gotoFile(name string) {
-	g.jo.tabBar.Add(name)
-	g.jo.tabBar.Draw()
-
 	g.jo.editor.Load(name)
 	g.jo.editor.Draw()
 	g.jo.focus = g.jo.editor
-
 	g.jo.status.Set(newStatusBar(g.jo))
 }
 
@@ -191,6 +191,14 @@ func (g *gotoBar) LostFocus() {
 
 func (g *gotoBar) Fixed() bool {
 	return true
+}
+
+func (g *gotoBar) OnClick(x, y int) {
+	if g.jo.focus == g {
+		return
+	}
+	g.jo.focus.LostFocus()
+	g.jo.focus = g
 }
 
 var files []string

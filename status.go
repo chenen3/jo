@@ -63,3 +63,10 @@ func (b *statusBar) HandleEvent(_ tcell.Event) { screen.HideCursor() }
 func (b *statusBar) Pos() (x1, y1, width, height int) { return b.x, b.y, b.width, b.height }
 func (b *statusBar) ShowCursor()                      {}
 func (b *statusBar) LostFocus()                       {}
+func (b *statusBar) OnClick(x, y int) {
+	if b.j.focus == b {
+		return
+	}
+	b.j.focus.LostFocus()
+	b.j.focus = b
+}

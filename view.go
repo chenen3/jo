@@ -12,6 +12,7 @@ type View interface {
 	ShowCursor()
 	LostFocus()
 	Fixed() bool
+	OnClick(x, y int)
 }
 
 type vstack struct {
@@ -24,6 +25,15 @@ func VStack(v ...View) *vstack {
 	return &vstack{Views: v}
 }
 
+func (v *vstack) OnClick(x, y int) {
+	for _, view := range v.Views {
+		if inView(view, x, y) {
+			view.OnClick(x, y)
+		}
+	}
+}
+
+func (v *vstack) Fixed() bool { return false }
 func (v *vstack) SetPos(x, y, width, height int) {
 	v.x = x
 	v.y = y
@@ -95,7 +105,7 @@ func (h *hstack) SetPos(x, y, width, height int) {
 	h.height = height
 }
 
-func (h *hstack) Render() {
+func (h *hstack) Draw() {
 	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	for y := h.y; y < h.y+h.height; y++ {
 		for x := h.x; x < h.x+h.width; x++ {
@@ -136,3 +146,11 @@ func (h *hstack) Pos() (x1, y1, x2, y2 int) { return h.x, h.y, h.x + h.width - 1
 func (h *hstack) HandleEvent(tcell.Event)   {}
 func (h *hstack) ShowCursor()               {}
 func (h *hstack) LostFocus()                {}
+func (h *hstack) Fixed() bool               { return false }
+func (h *hstack) OnClick(x, y int) {
+	for _, v := range h.Views {
+		if inView(v, x, y) {
+			v.OnClick(x, y)
+		}
+	}
+}

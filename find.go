@@ -20,6 +20,14 @@ func newFindBar(j *Jo) *findBar {
 	return &findBar{jo: j, height: 1}
 }
 
+func (f *findBar) OnClick(x, y int) {
+	if f.jo.focus == f {
+		return
+	}
+	f.jo.focus.LostFocus()
+	f.jo.focus = f
+}
+
 func (f *findBar) SetPos(x, y, width, height int) {
 	f.x = x
 	f.y = y
