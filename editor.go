@@ -48,10 +48,24 @@ type editor struct {
 }
 
 func (e *editor) OnClick(x, y int) {
+	if inView(e.titleBar, x, y) {
+		e.titleBar.OnClick(x, y)
+		return
+	}
+	e.setCursor(x, y)
+	e.Focus()
+	e.jo.status.Draw()
+}
+
+func (e *editor) Focus() {
+	e.ShowCursor()
 	if e.jo.focus == e {
 		return
 	}
-	e.jo.focus.LostFocus()
+	if e.jo.focus != nil {
+		// FIXME: do not mess up with defocus inside Focus
+		e.jo.focus.Defocus()
+	}
 	e.jo.focus = e
 	e.jo.editor = e
 }
@@ -70,8 +84,9 @@ func newEditor(j *Jo, filename string) *editor {
 		},
 		lastPos:   make(map[string][3]int),
 		tokenTree: new(node),
-		titleBar:  newTitleBar(j, filename),
 	}
+
+	e.titleBar = newTitleBar(e, filename)
 
 	if filename == "" {
 		e.buf = append(e.buf, []rune{})
@@ -188,12 +203,12 @@ func (e *editor) Draw() {
 		lineBarWidth++
 	}
 	e.lineBar.x1 = e.x
-	e.lineBar.y1 = e.y
+	e.lineBar.y1 = e.y + e.titleBar.height
 	e.lineBar.x2 = e.x + lineBarWidth
 	e.lineBar.y2 = e.y + e.height - 1
 
 	e.bx1 = e.x + lineBarWidth
-	e.by1 = e.y
+	e.by1 = e.y + e.titleBar.height
 	e.bx2 = e.x + e.width - 1
 	e.by2 = e.y + e.height - 1
 
@@ -604,124 +619,137 @@ func (e *editor) FindPrev() {
 	e.Draw()
 }
 
-func (e *editor) HandleEvent(ev tcell.Event) {
-	switch ev := ev.(type) {
-	case *tcell.EventMouse:
-		x, y := ev.Position()
-		switch ev.Buttons() {
-		case tcell.Button1, tcell.Button2:
-			e.setCursor(x, y)
-		case tcell.WheelUp:
-			delta := int(float32(y) * wheelScrollSensitivity)
-			e.scrollUp(delta)
-		case tcell.WheelDown:
-			delta := int(float32(y) * wheelScrollSensitivity)
-			e.scrollDown(delta)
+func (e *editor) HandleEvent(event tcell.Event) {
+	ev, ok := event.(*tcell.EventKey)
+	if !ok {
+		return
+	}
+
+	defer e.ShowCursor()
+	e.jo.status.Draw()
+	switch ev.Key() {
+	case tcell.KeyPgUp:
+		e.scrollUp(e.PageSize() - 1)
+		e.cursorLineAdd(-(e.PageSize() - 1))
+	case tcell.KeyPgDn:
+		e.scrollDown(e.PageSize() - 1)
+		e.cursorLineAdd(e.PageSize() - 1)
+	case tcell.KeyHome:
+		e.cursorLineStart()
+	case tcell.KeyEnd:
+		e.cursorLineEnd()
+	case tcell.KeyUp:
+		if e.suggest == nil {
+			e.cursorUp()
+			return
 		}
-	case *tcell.EventKey:
-		switch ev.Key() {
-		case tcell.KeyPgUp:
-			e.scrollUp(e.PageSize() - 1)
-			e.cursorLineAdd(-(e.PageSize() - 1))
-		case tcell.KeyPgDn:
-			e.scrollDown(e.PageSize() - 1)
-			e.cursorLineAdd(e.PageSize() - 1)
-		case tcell.KeyHome:
-			e.cursorLineStart()
-		case tcell.KeyEnd:
-			e.cursorLineEnd()
-		case tcell.KeyUp:
-			if e.suggest == nil {
-				e.cursorUp()
-				break
-			}
-			if e.line-e.startLine < len(e.suggest.options) {
-				e.suggest.i--
-			} else {
-				e.suggest.i++
-			}
-			if e.suggest.i == -1 {
-				e.suggest.i = len(e.suggest.options) - 1
-			} else if e.suggest.i == len(e.suggest.options) {
-				e.suggest.i = 0
-			}
+		if e.line-e.startLine < len(e.suggest.options) {
+			e.suggest.i--
+		} else {
+			e.suggest.i++
+		}
+		if e.suggest.i == -1 {
+			e.suggest.i = len(e.suggest.options) - 1
+		} else if e.suggest.i == len(e.suggest.options) {
+			e.suggest.i = 0
+		}
+		e.showSuggestion()
+
+	case tcell.KeyDown:
+		if e.suggest == nil {
+			e.cursorDown()
+			return
+		}
+		if e.line-e.startLine < len(e.suggest.options) {
+			e.suggest.i++
+		} else {
+			e.suggest.i--
+		}
+		if e.suggest.i == -1 {
+			e.suggest.i = len(e.suggest.options) - 1
+		} else if e.suggest.i == len(e.suggest.options) {
+			e.suggest.i = 0
+		}
+		e.showSuggestion()
+	case tcell.KeyLeft:
+		e.cursorColAdd(-1)
+	case tcell.KeyRight:
+		e.cursorColAdd(1)
+	case tcell.KeyRune:
+		e.writeRune(ev.Rune())
+		if e.suggest != nil && e.loadSuggetion() {
+			e.Draw() // clear previous suggestions
 			e.showSuggestion()
+		}
+	case tcell.KeyTab:
+		if e.column == 1 {
+			e.writeRune('\t')
+			return
+		}
 
-		case tcell.KeyDown:
-			if e.suggest == nil {
-				e.cursorDown()
-				break
-			}
-			if e.line-e.startLine < len(e.suggest.options) {
-				e.suggest.i++
-			} else {
-				e.suggest.i--
-			}
-			if e.suggest.i == -1 {
-				e.suggest.i = len(e.suggest.options) - 1
-			} else if e.suggest.i == len(e.suggest.options) {
-				e.suggest.i = 0
-			}
-			e.showSuggestion()
-		case tcell.KeyLeft:
-			e.cursorColAdd(-1)
-		case tcell.KeyRight:
-			e.cursorColAdd(1)
-		case tcell.KeyRune:
-			e.writeRune(ev.Rune())
-			if e.suggest != nil {
-				e.Draw() // TODO: no need to refresh the whole screen
-			}
-		case tcell.KeyTab:
-			if e.column == 1 {
-				e.writeRune('\t')
-				break
-			}
+		// on second <tab>, accept the first suggestion
+		if e.suggest != nil {
+			e.accecptSuggestion()
+			return
+		}
 
-			if e.suggest != nil {
-				e.accecptSuggestion()
-				break
-			}
-
-			e.loadSuggetion()
+		// on first <tab>, show suggestions
+		if e.loadSuggetion() {
 			if len(e.suggest.options) == 1 {
 				e.accecptSuggestion()
 			} else {
 				e.showSuggestion()
 			}
-		case tcell.KeyEnter:
-			if e.suggest != nil {
-				e.accecptSuggestion()
-				break
-			}
-			e.cursorEnter()
-		case tcell.KeyBackspace, tcell.KeyBackspace2:
-			e.deleteLeft()
-		case tcell.KeyCtrlU:
-			e.deleteToLineStart()
-		case tcell.KeyCtrlK:
-			e.deleteToLineEnd()
-		case tcell.KeyESC:
-			if _, ok := e.jo.status.View.(*findBar); ok {
-				e.ClearFind()
-				e.Draw()
-				e.jo.status.Set(newStatusBar(e.jo))
-			}
+		}
+	case tcell.KeyEnter:
+		if e.suggest != nil {
+			e.accecptSuggestion()
+			return
+		}
+		e.cursorEnter()
+	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		e.deleteLeft()
+		if e.suggest != nil && e.loadSuggetion() {
+			e.Draw() // clear previous suggestions
+			e.showSuggestion()
+		}
+	case tcell.KeyCtrlU:
+		e.deleteToLineStart()
+	case tcell.KeyCtrlK:
+		e.deleteToLineEnd()
+	case tcell.KeyESC:
+		if e.suggest != nil {
+			e.suggest = nil
+			e.Draw()
+			return
+		}
+		if _, ok := e.jo.status.View.(*findBar); ok {
+			e.ClearFind()
+			e.Draw()
+			e.jo.status.Set(newStatusBar(e.jo))
+			e.jo.status.Draw()
 		}
 	}
 }
 
-func (e *editor) loadSuggetion() {
+func (e *editor) loadSuggetion() bool {
 	word := string(lastToken(e.buf[e.line-1], e.column-2))
 	if len(word) == 0 {
-		return
+		return false
 	}
+
+	tokens := e.tokenTree.get(word)
+	if len(tokens) == 0 {
+		return false
+	}
+
 	e.suggest = &struct {
 		options []string
 		i       int
 	}{
-		options: e.tokenTree.get(word),
+		options: tokens,
 	}
+	return true
 }
 
 func (e *editor) showSuggestion() {
@@ -766,7 +794,7 @@ func (e *editor) Pos() (x1, y1, width, height int) {
 	return e.x, e.y, e.width, e.height
 }
 
-func (e *editor) LostFocus() {
+func (e *editor) Defocus() {
 	// TODO: format
 }
 
@@ -776,6 +804,7 @@ func (e *editor) ClearFind() {
 }
 
 func (e *editor) SetPos(x, y, width, height int) {
+	e.titleBar.SetPos(x, y, width, 1)
 	e.x = x
 	e.y = y
 	e.width = width
@@ -837,32 +866,38 @@ func (e *editor) Load(filename string) {
 }
 
 func (e *editor) Close() {
-	// delete editor
-	if len(e.titleBar.names) == 0 {
-		if len(e.jo.editors.Views) == 1 {
-			close(e.jo.done)
-			return
+	if len(e.titleBar.names) > 0 {
+		e.titleBar.Close()
+		if len(e.titleBar.names) == 0 {
+			e.Reset()
+		} else {
+			e.Load(e.titleBar.names[e.titleBar.index])
 		}
-		var i int
-		for i = range e.jo.editors.Views {
-			if vs, ok := e.jo.editors.Views[i].(*vstack); ok {
-				if vs.Views[1] == e {
-					break
-				}
-			}
-		}
-		e.jo.focus.LostFocus()
-		e.jo.focus = e.jo.editors.Views[i+1].(*vstack).Views[1]
-		e.jo.editors.Views = slices.Delete(e.jo.editors.Views, i, i+1)
 		return
 	}
 
-	e.titleBar.Close()
-	if len(e.titleBar.names) == 0 {
-		e.Reset()
+	// delete editor
+	if len(e.jo.editors.Views) == 1 {
+		close(e.jo.done)
 		return
 	}
-	e.Load(e.titleBar.names[e.titleBar.index])
+	var i int
+	for i = range e.jo.editors.Views {
+		if e.jo.editors.Views[i] == e {
+			break
+		}
+	}
+	if e.jo.focus != nil {
+		e.jo.focus.Defocus()
+	}
+	j := i - 1
+	if j < 0 {
+		j = 0
+	}
+	prevE := e.jo.editors.Views[j].(*editor)
+	e.jo.focus = prevE
+	e.jo.editor = prevE
+	e.jo.editors.Views = slices.Delete(e.jo.editors.Views, i, i+1)
 }
 
 type lineBar struct {

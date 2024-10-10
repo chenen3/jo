@@ -5,15 +5,15 @@ import (
 )
 
 type titleBar struct {
-	jo            *Jo
+	e             *editor
 	x, y          int
 	width, height int
 	names         []string
 	index         int // indicate current editor
 }
 
-func newTitleBar(j *Jo, name string) *titleBar {
-	t := &titleBar{jo: j, height: 1}
+func newTitleBar(e *editor, name string) *titleBar {
+	t := &titleBar{e: e, height: 1}
 	if name != "" {
 		t.names = append(t.names, name)
 	}
@@ -21,11 +21,23 @@ func newTitleBar(j *Jo, name string) *titleBar {
 }
 
 func (t *titleBar) OnClick(x, y int) {
-	if t.jo.focus == t {
-		return
+	start := t.x
+	for i, name := range t.names {
+		end := start + len(name) + len(" |")
+		if start <= x && x <= end {
+			if i == t.index {
+				// clicked on current title
+				t.e.Focus()
+				return
+			}
+			t.index = i
+			t.e.Load(name)
+			t.e.Draw()
+			t.e.Focus()
+			return
+		}
+		start = end + 1
 	}
-	t.jo.focus.LostFocus()
-	t.jo.focus = t
 }
 
 // close current editor
@@ -48,40 +60,11 @@ func (t *titleBar) Close() {
 	}
 }
 
-func (t *titleBar) HandleEvent(e tcell.Event) {
-	m, ok := e.(*tcell.EventMouse)
-	if !ok {
-		return
-	}
-	if m.Buttons() != tcell.Button1 {
-		return
-	}
-	x, y := m.Position()
-	if y < t.y || y > t.y+t.height-1 {
-		return
-	}
-
-	// on click
-	var start, end int
-	for i, name := range t.names {
-		end = start + len(name) + len(" |")
-		if start <= x && x <= end {
-			if i == t.index {
-				return
-			}
-			t.index = i
-			t.jo.editor.Load(name)
-			t.jo.focus = t.jo.editor
-			t.jo.Draw()
-			return
-		}
-		start = end + 1
-	}
-}
-
-func (t *titleBar) ShowCursor() {}
-func (t *titleBar) LostFocus()  {}
-func (t *titleBar) Fixed() bool { return true }
+func (t *titleBar) HandleEvent(e tcell.Event) {}
+func (t *titleBar) ShowCursor()               {}
+func (t *titleBar) Focus()                    {}
+func (t *titleBar) Defocus()                  {}
+func (t *titleBar) Fixed() bool               { return true }
 
 func (t *titleBar) SetPos(x, y, width, height int) {
 	t.x = x
@@ -96,7 +79,7 @@ func (t *titleBar) Pos() (x1, y1, width, height int) {
 func (t *titleBar) Draw() {
 	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	for y := t.y; y < t.y+t.height; y++ {
-		for x := t.x; x <= t.x+t.width; x++ {
+		for x := t.x; x < t.x+t.width; x++ {
 			screen.SetContent(x, y, ' ', nil, style)
 		}
 	}

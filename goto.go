@@ -40,19 +40,19 @@ func (g *gotoBar) Draw() {
 			screen.SetContent(x, y, ' ', nil, style)
 		}
 	}
-	g.cursorX = g.x
-	g.cursorY = g.y
 
 	if len(g.keyword) == 0 {
 		placeholder := "search files by name (append : to go to line)"
 		for i, c := range placeholder {
-			screen.SetContent(g.cursorX+i, g.y, c, nil, style.Foreground(tcell.ColorGray))
+			screen.SetContent(g.x+i, g.y, c, nil, style.Foreground(tcell.ColorGray))
 		}
 	}
-	for _, c := range g.keyword {
-		screen.SetContent(g.cursorX, g.y, c, nil, style)
-		g.cursorX++
+	for i, c := range g.keyword {
+		screen.SetContent(g.x+i, g.y, c, nil, style)
 	}
+	g.cursorX = g.x + len(g.keyword)
+	g.cursorY = g.y
+	defer screen.ShowCursor(g.cursorX, g.cursorY)
 
 	if len(g.keyword) > 0 && g.keyword[0] == ':' {
 		return
@@ -79,10 +79,6 @@ func (g *gotoBar) Draw() {
 
 func (g *gotoBar) Pos() (x1, y1, width, height int) { return g.x, g.y, g.width, g.height }
 
-func (g *gotoBar) ShowCursor() {
-	screen.ShowCursor(g.cursorX, g.cursorY)
-}
-
 func (g *gotoBar) HandleEvent(ev tcell.Event) {
 	k, ok := ev.(*tcell.EventKey)
 	if !ok {
@@ -90,7 +86,8 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 	}
 	switch k.Key() {
 	case tcell.KeyRune:
-		g.jo.editor.Draw() // clear previous options
+		defer g.Draw()
+		g.jo.editors.Views[0].Draw() // clear previous options
 		g.keyword = append(g.keyword, k.Rune())
 		if g.keyword[0] == ':' {
 			return
@@ -103,10 +100,11 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 		}
 		g.options = options
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		defer g.Draw()
 		if len(g.keyword) == 0 {
 			return
 		}
-		g.jo.editor.Draw() // clear previous options
+		g.jo.editors.Views[0].Draw() // clear previous options
 		g.keyword = g.keyword[:len(g.keyword)-1]
 		if len(g.keyword) == 0 {
 			return
@@ -133,30 +131,36 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 		}
 		if len(g.options) > 0 {
 			g.gotoFile(g.options[g.index])
+			g.jo.Draw()
 		}
 	case tcell.KeyUp:
+		defer g.Draw()
 		if g.index == len(files)-1 {
 			g.index = 0
 			return
 		}
 		g.index++
 	case tcell.KeyDown:
+		defer g.Draw()
 		if g.index == 0 {
 			g.index = len(files) - 1
 			return
 		}
 		g.index--
 	case tcell.KeyESC:
-		g.LostFocus()
-		g.jo.focus = g.jo.editor
+		g.Defocus()
+		g.jo.editor.Focus()
 	case tcell.KeyCtrlBackslash:
 		e := newEditor(g.jo, g.options[g.index])
-		g.jo.focus.LostFocus()
+		if g.jo.focus != nil {
+			g.jo.focus.Defocus()
+		}
 		g.jo.focus = e
 		g.jo.editor = e
-		g.jo.editors.Views = append(g.jo.editors.Views, VStack(e.titleBar, e))
+		g.jo.editors.Views = append(g.jo.editors.Views, e)
 		g.jo.status.Set(newStatusBar(g.jo))
 		g.jo.Draw()
+		e.ShowCursor()
 	}
 }
 
@@ -173,20 +177,21 @@ func (g *gotoBar) gotoLine(line int) {
 		g.jo.editor.startLine = line - g.jo.editor.PageSize()/2
 	}
 	g.jo.editor.Draw()
-	g.jo.focus = g.jo.editor
+	g.jo.editor.Focus()
 	g.jo.status.Set(newStatusBar(g.jo))
 }
 
 func (g *gotoBar) gotoFile(name string) {
 	g.jo.editor.Load(name)
 	g.jo.editor.Draw()
-	g.jo.focus = g.jo.editor
+	g.jo.editor.Focus()
 	g.jo.status.Set(newStatusBar(g.jo))
 }
 
-func (g *gotoBar) LostFocus() {
+func (g *gotoBar) Defocus() {
 	g.jo.status.Set(newStatusBar(g.jo))
-	g.jo.editor.Draw()
+	g.jo.status.Draw()
+	g.jo.editors.Views[0].Draw() // hide gotoBar
 }
 
 func (g *gotoBar) Fixed() bool {
@@ -194,11 +199,15 @@ func (g *gotoBar) Fixed() bool {
 }
 
 func (g *gotoBar) OnClick(x, y int) {
+	g.Focus()
+}
+
+func (g *gotoBar) Focus() {
 	if g.jo.focus == g {
 		return
 	}
-	g.jo.focus.LostFocus()
 	g.jo.focus = g
+	screen.ShowCursor(g.cursorX, g.cursorY)
 }
 
 var files []string

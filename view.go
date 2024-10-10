@@ -8,10 +8,10 @@ type View interface {
 	SetPos(x, y, width, height int)
 	Pos() (x1, y1, width, height int)
 	Draw()
-	HandleEvent(tcell.Event)
-	ShowCursor()
-	LostFocus()
 	Fixed() bool
+	HandleEvent(tcell.Event) // will be called on focused
+	Focus()
+	Defocus()
 	OnClick(x, y int)
 }
 
@@ -32,6 +32,8 @@ func (v *vstack) OnClick(x, y int) {
 		}
 	}
 }
+
+func (v *vstack) Focus() {}
 
 func (v *vstack) Fixed() bool { return false }
 func (v *vstack) SetPos(x, y, width, height int) {
@@ -86,7 +88,7 @@ func (v *vstack) Pos() (x1, y1, x2, y2 int) {
 }
 func (v *vstack) HandleEvent(tcell.Event) {}
 func (v *vstack) ShowCursor()             {}
-func (v *vstack) LostFocus()              {}
+func (v *vstack) Defocus()                {}
 
 type hstack struct {
 	x, y          int
@@ -145,7 +147,7 @@ func (h *hstack) Draw() {
 func (h *hstack) Pos() (x1, y1, x2, y2 int) { return h.x, h.y, h.x + h.width - 1, h.y + h.height - 1 }
 func (h *hstack) HandleEvent(tcell.Event)   {}
 func (h *hstack) ShowCursor()               {}
-func (h *hstack) LostFocus()                {}
+func (h *hstack) Defocus()                  {}
 func (h *hstack) Fixed() bool               { return false }
 func (h *hstack) OnClick(x, y int) {
 	for _, v := range h.Views {
@@ -154,3 +156,4 @@ func (h *hstack) OnClick(x, y int) {
 		}
 	}
 }
+func (h *hstack) Focus() {}

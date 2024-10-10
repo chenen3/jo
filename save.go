@@ -61,6 +61,7 @@ func (s *saveBar) Draw() {
 			s.cursorX++
 		}
 	}
+	screen.ShowCursor(s.cursorX, s.cursorY)
 
 	keymap := "[enter]save | [esc]cancel | [ctrl+q]discard"
 	for i, c := range keymap {
@@ -69,11 +70,10 @@ func (s *saveBar) Draw() {
 	}
 }
 
-func (s *saveBar) ShowCursor() {
-	screen.ShowCursor(s.cursorX, s.cursorY)
+func (s *saveBar) Defocus() {
+	s.jo.status.Set(newStatusBar(s.jo))
+	s.jo.status.Draw()
 }
-
-func (s *saveBar) LostFocus()  {}
 func (s *saveBar) Fixed() bool { return true }
 
 func (s *saveBar) HandleEvent(ev tcell.Event) {
@@ -88,6 +88,7 @@ func (s *saveBar) HandleEvent(ev tcell.Event) {
 			return
 		}
 		s.filename = append(s.filename, k.Rune())
+		s.Draw()
 	case tcell.KeyCtrlS, tcell.KeyEnter:
 		var filename string
 		if s.jo.editor.filename != "" {
@@ -120,8 +121,7 @@ func (s *saveBar) HandleEvent(ev tcell.Event) {
 			s.jo.editor.titleBar.Add(filename)
 			s.jo.editor.titleBar.Draw()
 		}
-		s.jo.status.Set(newStatusBar(s.jo))
-		s.jo.focus = s.jo.editor
+		s.jo.editor.Focus()
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		if s.jo.editor.filename != "" {
 			return
@@ -130,16 +130,23 @@ func (s *saveBar) HandleEvent(ev tcell.Event) {
 			return
 		}
 		s.filename = s.filename[:len(s.filename)-1]
+		s.Draw()
 	case tcell.KeyESC:
-		s.jo.status.Set(newStatusBar(s.jo))
-		s.jo.focus = s.jo.editor
+		s.jo.editor.Focus()
 	}
 }
 
 func (s *saveBar) OnClick(x, y int) {
+	s.Focus()
+}
+
+func (s *saveBar) Focus() {
 	if s.jo.focus == s {
 		return
 	}
-	s.jo.focus.LostFocus()
+	if s.jo.focus != nil {
+		s.jo.focus.Defocus()
+	}
 	s.jo.focus = s
+	screen.ShowCursor(s.cursorX, s.cursorY)
 }

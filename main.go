@@ -14,6 +14,8 @@ type Jo struct {
 	focus   View // handle event
 	done    chan struct{}
 	stack   *vstack // layout
+	mouseX  int
+	mouseY  int
 }
 
 func (j *Jo) Draw() {
@@ -60,23 +62,21 @@ func main() {
 		done: make(chan struct{}),
 	}
 	j.editor = newEditor(j, filename)
-	j.editors = HStack(
-		VStack(j.editor.titleBar, j.editor), //TODO: merge titleBar to editor
-	)
+	j.editors = HStack(j.editor)
 	j.status = &statusView{newStatusBar(j)}
 	j.stack = VStack(j.editors, j.status)
 
-	j.focus = j.editor
+	width, height := screen.Size()
+	j.stack.SetPos(0, 0, width, height)
+	j.Draw()
+	j.editor.Focus()
+	screen.Show()
 	for {
 		select {
 		case <-j.done:
 			return
 		default:
 		}
-
-		j.status.Draw()
-		j.focus.ShowCursor()
-		screen.Show()
 
 		ev := screen.PollEvent()
 		switch ev := ev.(type) {
@@ -86,53 +86,82 @@ func main() {
 			j.Draw()
 			screen.Sync()
 			continue
+		case *tcell.EventMouse:
+			x, y := ev.Position()
+			switch ev.Buttons() {
+			case tcell.Button1:
+				j.stack.OnClick(x, y)
+			case tcell.WheelUp:
+				// scroll the editor that under the mouse, even when not being focused
+				for _, v := range j.editors.Views {
+					if inView(v, j.mouseX, j.mouseY) {
+						delta := int(float32(y) * wheelScrollSensitivity)
+						v.(*editor).scrollUp(delta)
+					}
+				}
+			case tcell.WheelDown:
+				for _, v := range j.editors.Views {
+					if inView(v, j.mouseX, j.mouseY) {
+						delta := int(float32(y) * wheelScrollSensitivity)
+						v.(*editor).scrollDown(delta)
+					}
+				}
+			default:
+				j.mouseX = x
+				j.mouseY = y
+				// do not render on mouse motion
+				continue
+			}
 		case *tcell.EventKey:
 			if ev.Key() == tcell.KeyCtrlQ {
 				_, ok := j.status.View.(*saveBar)
 				if !ok && j.editor.dirty {
 					j.status.Set(newSaveBar(j, true))
-					j.focus = j.status
-					continue
+					j.status.Draw()
+					j.status.Focus()
+					break
 				}
+				// double <ctrl+q>
 				return
 			}
 			if ev.Key() == tcell.KeyCtrlF {
 				if _, ok := j.status.View.(*findBar); !ok {
+					j.focus.Defocus()
 					j.status.Set(newFindBar(j))
+					j.status.Draw()
 				}
-				j.focus = j.status
+				j.status.Focus()
 				break
 			}
 			if ev.Key() == tcell.KeyCtrlS {
 				if _, ok := j.status.View.(*saveBar); !ok {
 					j.status.Set(newSaveBar(j, false))
+					j.status.Draw()
 				}
-				j.focus = j.status
+				j.status.Focus()
 				break
 			}
 			if ev.Key() == tcell.KeyCtrlP {
 				if _, ok := j.status.View.(*gotoBar); !ok {
 					j.status.Set(newGotoBar(j, ""))
+					j.status.Draw()
 				}
-				j.focus = j.status
+				j.status.Focus()
 				break
 			}
 			if ev.Key() == tcell.KeyCtrlG {
 				j.status.Set(newGotoBar(j, ":"))
-				j.focus = j.status
+				j.status.Draw()
+				j.status.Focus()
 				break
 			}
 			if ev.Key() == tcell.KeyCtrlW {
 				j.editor.Close()
 				j.Draw()
 			}
-		case *tcell.EventMouse:
-			if ev.Buttons() == tcell.Button1 {
-				x, y := ev.Position()
-				j.stack.OnClick(x, y)
-			}
 		}
 		j.focus.HandleEvent(ev)
+		screen.Show()
 	}
 }
 

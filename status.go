@@ -28,6 +28,7 @@ func newStatusBar(j *Jo) *statusBar {
 }
 
 func (b *statusBar) Fixed() bool { return true }
+func (b *statusBar) Focus()      {}
 
 func (b *statusBar) SetPos(x, y, width, height int) {
 	b.x = x
@@ -48,13 +49,18 @@ func (b *statusBar) Draw() {
 		screen.SetContent(b.x+i, b.y, c, nil, style)
 	}
 
-	text := "<tab> suggest, <ctrl+p> goto, <ctrl+f> find, <ctrl+s> save, <ctrl+q> quit"
-	for i, c := range text {
+	keymap := "<tab> suggest, <ctrl+p> goto, <ctrl+f> find, <ctrl+s> save, <ctrl+q> quit"
+	for i, c := range keymap {
 		if i > b.width-1 {
 			break
 		}
 		// align right
-		screen.SetContent(b.x+b.width-1-len(text)+i, b.y, c, nil, style)
+		x := b.x + b.width - 1 - len(keymap) + i
+		if x <= b.x+len(s) {
+			// do not cover the line number
+			break
+		}
+		screen.SetContent(x, b.y, c, nil, style)
 	}
 }
 
@@ -62,11 +68,13 @@ func (b *statusBar) HandleEvent(_ tcell.Event) { screen.HideCursor() }
 
 func (b *statusBar) Pos() (x1, y1, width, height int) { return b.x, b.y, b.width, b.height }
 func (b *statusBar) ShowCursor()                      {}
-func (b *statusBar) LostFocus()                       {}
+func (b *statusBar) Defocus()                         {}
 func (b *statusBar) OnClick(x, y int) {
 	if b.j.focus == b {
 		return
 	}
-	b.j.focus.LostFocus()
+	if b.j.focus != nil {
+		b.j.focus.Defocus()
+	}
 	b.j.focus = b
 }

@@ -21,10 +21,17 @@ func newFindBar(j *Jo) *findBar {
 }
 
 func (f *findBar) OnClick(x, y int) {
+	f.Focus()
+}
+
+func (f *findBar) Focus() {
+	screen.ShowCursor(f.cursorX, f.cursorY)
 	if f.jo.focus == f {
 		return
 	}
-	f.jo.focus.LostFocus()
+	if f.jo.focus != nil {
+		f.jo.focus.Defocus()
+	}
 	f.jo.focus = f
 }
 
@@ -75,11 +82,7 @@ func (f *findBar) Pos() (x1, y1, x2, y2 int) {
 	return f.x, f.y, f.width, f.height
 }
 
-func (f *findBar) ShowCursor() {
-	screen.ShowCursor(f.cursorX, f.cursorY)
-}
-
-func (f *findBar) LostFocus()  {}
+func (f *findBar) Defocus()    {}
 func (f *findBar) Fixed() bool { return true }
 
 func (f *findBar) HandleEvent(ev tcell.Event) {
@@ -91,15 +94,28 @@ func (f *findBar) HandleEvent(ev tcell.Event) {
 	case tcell.KeyRune:
 		f.keyword = append(f.keyword, k.Rune())
 		f.jo.editor.Find(string(f.keyword))
+		f.Draw()
+		screen.ShowCursor(f.cursorX, f.cursorY)
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		if len(f.keyword) == 0 {
 			return
 		}
 		f.keyword = f.keyword[:len(f.keyword)-1]
-		f.jo.editor.Find(string(f.keyword))
+		if len(f.keyword) == 0 {
+			f.jo.editor.ClearFind()
+			f.jo.editor.Draw()
+		} else {
+			f.jo.editor.Find(string(f.keyword))
+		}
+		f.Draw()
+		screen.ShowCursor(f.cursorX, f.cursorY)
 	case tcell.KeyEnter, tcell.KeyDown:
 		f.jo.editor.FindNext()
 	case tcell.KeyUp:
 		f.jo.editor.FindPrev()
+	case tcell.KeyESC:
+		f.jo.status.Set(newStatusBar(f.jo))
+		f.jo.status.Draw()
+		f.jo.editor.Focus()
 	}
 }
