@@ -157,7 +157,7 @@ func main() {
 			}
 			if ev.Key() == tcell.KeyCtrlW {
 				_, ok := j.status.View.(*saveBar)
-				if  !ok && j.editor.dirty {
+				if !ok && j.editor.dirty {
 					j.status.Set(newSaveBar(j, false))
 					j.status.Draw()
 					j.status.Focus()

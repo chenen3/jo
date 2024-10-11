@@ -49,7 +49,7 @@ func (b *statusBar) Draw() {
 		screen.SetContent(b.x+i, b.y, c, nil, style)
 	}
 
-	keymap := "<ctrl+s> save, <ctrl+w> close, <ctrl+f> find, <ctrl+p> goto, <ctrl+q> quit"
+	keymap := "<ctrl+s> save, <ctrl+w> close, <ctrl+f> find, <ctrl+p> goto"
 	for i, c := range keymap {
 		if i > b.width-1 {
 			break

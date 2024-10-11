@@ -64,18 +64,19 @@ func (g *gotoBar) Draw() {
 	for i, name := range g.options {
 		selectedStyle := style
 		if i == g.index {
-			selectedStyle = style.Background(tcell.ColorBlue)
+			selectedStyle = style.Background(tcell.ColorLightBlue)
 		}
 		for j, c := range name {
 			screen.SetContent(g.x+j, g.y-1-i, c, nil, selectedStyle)
 		}
 		// padding
-		for j := 0; j < 40-len(name); j++ {
+		for j := 0; j < optionWidth-len(name); j++ {
 			screen.SetContent(g.x+len(name)+j, g.y-1-i, ' ', nil, selectedStyle)
 		}
 	}
-
 }
+
+const optionWidth = 40
 
 func (g *gotoBar) Pos() (x1, y1, width, height int) { return g.x, g.y, g.width, g.height }
 

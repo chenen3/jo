@@ -41,6 +41,7 @@ type editor struct {
 	suggest *struct {
 		options []string
 		i       int
+		up      bool
 	}
 
 	titleBar *titleBar
@@ -50,6 +51,11 @@ func (e *editor) OnClick(x, y int) {
 	if inView(e.titleBar, x, y) {
 		e.titleBar.OnClick(x, y)
 		return
+	}
+
+	if e.suggest != nil {
+		e.suggest = nil
+		e.Draw()
 	}
 	e.setCursor(x, y)
 	e.Focus()
@@ -115,7 +121,6 @@ func newEditor(j *Jo, filename string) *editor {
 	return e
 }
 
-// FIXME: use e.height
 // the number of lines visible in the editor view
 func (e *editor) PageSize() int { return e.by2 - e.by1 + 1 }
 
@@ -317,7 +322,6 @@ func (e *editor) ShowCursor() {
 		padding := tabs * (tabWidth - 1)
 		x = e.bx1 + e.column + padding - 1
 	}
-
 	screen.ShowCursor(x, e.by1+e.line-e.startLine)
 }
 
@@ -513,6 +517,7 @@ func (e *editor) WriteTo(w io.Writer) (int64, error) {
 		return int64(n), err
 	}
 	e.dirty = false
+	buildTokenTree(tokenTree, e.buf)
 	return int64(n), nil
 }
 
@@ -643,11 +648,12 @@ func (e *editor) HandleEvent(event tcell.Event) {
 			return
 		}
 
-		if e.line-e.startLine < len(e.suggest.options) {
-			e.suggest.i--
-		} else {
+		if e.suggest.up {
 			e.suggest.i++
+		} else {
+			e.suggest.i--
 		}
+
 		if e.suggest.i == -1 {
 			e.suggest.i = len(e.suggest.options) - 1
 		} else if e.suggest.i == len(e.suggest.options) {
@@ -660,7 +666,7 @@ func (e *editor) HandleEvent(event tcell.Event) {
 			return
 		}
 
-		if e.line-e.startLine < len(e.suggest.options) {
+		if !e.suggest.up {
 			e.suggest.i++
 		} else {
 			e.suggest.i--
@@ -744,9 +750,14 @@ func (e *editor) loadSuggestion() bool {
 		return false
 	}
 
+	if len(tokens) > 10 {
+		// TODO: adjust the number
+		tokens = tokens[:10]
+	}
 	e.suggest = &struct {
 		options []string
 		i       int
+		up      bool
 	}{
 		options: tokens,
 	}
@@ -757,27 +768,29 @@ func (e *editor) showSuggestion() {
 	if len(e.suggest.options) == 0 {
 		return
 	}
-	width := 30
-	x := e.bx1 + e.Column() - 1
-	y := e.by1 + e.Line() - 1
+	cursorX := e.bx1 + e.Column() - 1
+	optionY := func(i int) int {
+		cursorY := e.by1 + e.Line() - e.startLine
+		var yy int
+		if e.by2-cursorY >= len(e.suggest.options) {
+			yy = cursorY + 1 + i // list down
+		} else {
+			e.suggest.up = true
+			yy = cursorY - 1 - i // list up
+		}
+		return yy
+	}
 	for i := range e.suggest.options {
 		style := tcell.StyleDefault.Background(tcell.ColorLightGray).Foreground(tcell.ColorBlack)
 		if i == e.suggest.i {
-			style = style.Background(tcell.ColorBlue)
+			style = style.Background(tcell.ColorLightBlue)
 		}
-		var yy int
-		if e.line-e.startLine < len(e.suggest.options) {
-			// list down
-			yy = y + 1 + i
-		} else {
-			// list up
-			yy = y - 1 - i
-		}
+		oy := optionY(i)
 		for j, c := range e.suggest.options[i] {
-			screen.SetContent(x+j+1, yy, c, nil, style)
+			screen.SetContent(cursorX+j, oy, c, nil, style)
 		}
-		for padding := width - len(e.suggest.options[i]); padding > 0; padding-- {
-			screen.SetContent(x+width-padding+1, yy, ' ', nil, style)
+		for padding := optionWidth - len(e.suggest.options[i]); padding > 0; padding-- {
+			screen.SetContent(cursorX+optionWidth-padding, oy, ' ', nil, style)
 		}
 	}
 }
