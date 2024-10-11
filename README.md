@@ -7,3 +7,5 @@ A text editor written for fun, with the following features:
 - split view
 
 It is around two thousand lines of code.
+
+![screenshot](screenshot.png)
