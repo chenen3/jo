@@ -6,6 +6,6 @@ A text editor written for fun, with the following features:
 - code completion
 - split view
 
-It is around two thousand lines of code.
+Jo has about 2,000 lines of code, and relies on [tcell](https://github.com/gdamore/tcell). 
 
 ![screenshot](screenshot.png)
