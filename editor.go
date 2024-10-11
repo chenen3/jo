@@ -38,8 +38,7 @@ type editor struct {
 
 	lastPos map[string][3]int // filename: [startline, line, column]
 
-	tokenTree *node
-	suggest   *struct {
+	suggest *struct {
 		options []string
 		i       int
 	}
@@ -63,12 +62,13 @@ func (e *editor) Focus() {
 		return
 	}
 	if e.jo.focus != nil {
-		// FIXME: do not mess up with defocus inside Focus
 		e.jo.focus.Defocus()
 	}
 	e.jo.focus = e
 	e.jo.editor = e
 }
+
+var tokenTree = new(node)
 
 func newEditor(j *Jo, filename string) *editor {
 	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
@@ -82,8 +82,7 @@ func newEditor(j *Jo, filename string) *editor {
 		lineBar: &lineBar{
 			style: style.Foreground(tcell.ColorGray),
 		},
-		lastPos:   make(map[string][3]int),
-		tokenTree: new(node),
+		lastPos: make(map[string][3]int),
 	}
 
 	e.titleBar = newTitleBar(e, filename)
@@ -107,7 +106,7 @@ func newEditor(j *Jo, filename string) *editor {
 	}
 
 	if len(e.buf) > 0 {
-		buildTokenTree(e.tokenTree, e.buf)
+		buildTokenTree(tokenTree, e.buf)
 	}
 	// file ends with a new line
 	if len(e.buf) == 0 || len(e.buf[len(e.buf)-1]) != 0 {
@@ -643,6 +642,7 @@ func (e *editor) HandleEvent(event tcell.Event) {
 			e.cursorUp()
 			return
 		}
+
 		if e.line-e.startLine < len(e.suggest.options) {
 			e.suggest.i--
 		} else {
@@ -654,12 +654,12 @@ func (e *editor) HandleEvent(event tcell.Event) {
 			e.suggest.i = 0
 		}
 		e.showSuggestion()
-
 	case tcell.KeyDown:
 		if e.suggest == nil {
 			e.cursorDown()
 			return
 		}
+
 		if e.line-e.startLine < len(e.suggest.options) {
 			e.suggest.i++
 		} else {
@@ -677,7 +677,8 @@ func (e *editor) HandleEvent(event tcell.Event) {
 		e.cursorColAdd(1)
 	case tcell.KeyRune:
 		e.writeRune(ev.Rune())
-		if e.suggest != nil && e.loadSuggetion() {
+		// refresh suggestions on input
+		if e.suggest != nil && e.loadSuggestion() {
 			e.Draw() // clear previous suggestions
 			e.showSuggestion()
 		}
@@ -694,7 +695,7 @@ func (e *editor) HandleEvent(event tcell.Event) {
 		}
 
 		// on first <tab>, show suggestions
-		if e.loadSuggetion() {
+		if e.loadSuggestion() {
 			if len(e.suggest.options) == 1 {
 				e.accecptSuggestion()
 			} else {
@@ -709,7 +710,7 @@ func (e *editor) HandleEvent(event tcell.Event) {
 		e.cursorEnter()
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		e.deleteLeft()
-		if e.suggest != nil && e.loadSuggetion() {
+		if e.suggest != nil && e.loadSuggestion() {
 			e.Draw() // clear previous suggestions
 			e.showSuggestion()
 		}
@@ -732,13 +733,13 @@ func (e *editor) HandleEvent(event tcell.Event) {
 	}
 }
 
-func (e *editor) loadSuggetion() bool {
+func (e *editor) loadSuggestion() bool {
 	word := string(lastToken(e.buf[e.line-1], e.column-2))
 	if len(word) == 0 {
 		return false
 	}
 
-	tokens := e.tokenTree.get(word)
+	tokens := tokenTree.get(word)
 	if len(tokens) == 0 {
 		return false
 	}
@@ -813,15 +814,6 @@ func (e *editor) SetPos(x, y, width, height int) {
 
 func (e *editor) Fixed() bool { return false }
 
-func (e *editor) Reset() {
-	e.buf = e.buf[:0]
-	e.buf = append(e.buf, []rune{})
-	e.filename = ""
-	e.startLine = 1
-	e.line = 1
-	e.column = 1
-}
-
 func (e *editor) Load(filename string) {
 	if filename == "" {
 		return
@@ -842,7 +834,7 @@ func (e *editor) Load(filename string) {
 		e.buf = append(e.buf, []rune(string(a[i])))
 	}
 	if len(e.buf) > 0 {
-		buildTokenTree(e.tokenTree, e.buf)
+		buildTokenTree(tokenTree, e.buf)
 	}
 	// file ends with a new line
 	if len(e.buf) == 0 || len(e.buf[len(e.buf)-1]) != 0 {
@@ -862,18 +854,19 @@ func (e *editor) Load(filename string) {
 		e.column = 1
 	}
 
+	e.dirty = false
+	e.suggest = nil
 	e.titleBar.Add(filename)
 }
 
 func (e *editor) Close() {
 	if len(e.titleBar.names) > 0 {
 		e.titleBar.Close()
-		if len(e.titleBar.names) == 0 {
-			e.Reset()
-		} else {
+		if len(e.titleBar.names) > 0 {
 			e.Load(e.titleBar.names[e.titleBar.index])
+			e.Focus()
+			return
 		}
-		return
 	}
 
 	// delete editor
@@ -887,16 +880,12 @@ func (e *editor) Close() {
 			break
 		}
 	}
-	if e.jo.focus != nil {
-		e.jo.focus.Defocus()
-	}
 	j := i - 1
 	if j < 0 {
 		j = 0
 	}
 	prevE := e.jo.editors.Views[j].(*editor)
-	e.jo.focus = prevE
-	e.jo.editor = prevE
+	prevE.Focus()
 	e.jo.editors.Views = slices.Delete(e.jo.editors.Views, i, i+1)
 }
 

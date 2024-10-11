@@ -63,7 +63,7 @@ func (s *saveBar) Draw() {
 	}
 	screen.ShowCursor(s.cursorX, s.cursorY)
 
-	keymap := "[enter]save | [esc]cancel | [ctrl+q]discard"
+	keymap := "[enter]save | [esc]cancel | [ctrl+w]discard"
 	for i, c := range keymap {
 		// align right
 		screen.SetContent(s.x+s.width-len(keymap)+i, s.y, c, nil, style)

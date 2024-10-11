@@ -156,6 +156,14 @@ func main() {
 				break
 			}
 			if ev.Key() == tcell.KeyCtrlW {
+				_, ok := j.status.View.(*saveBar)
+				if  !ok && j.editor.dirty {
+					j.status.Set(newSaveBar(j, false))
+					j.status.Draw()
+					j.status.Focus()
+					break
+				}
+				// double <ctrl+w>, discard changes anyway
 				j.editor.Close()
 				j.Draw()
 			}
