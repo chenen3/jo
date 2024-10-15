@@ -17,24 +17,17 @@ func (s *statusView) Set(v View) {
 }
 
 type statusBar struct {
-	j      *Jo
-	x, y   int
-	width  int
-	height int
+	j *Jo
+	baseView
 }
 
 func newStatusBar(j *Jo) *statusBar {
-	return &statusBar{j: j, height: 1}
+	b := &statusBar{j: j}
+	b.height = 1
+	return b
 }
 
-func (b *statusBar) Fixed() bool { return true }
-func (b *statusBar) Focus()      {}
-
-func (b *statusBar) SetPos(x, y, width, height int) {
-	b.x = x
-	b.y = y
-	b.width = width
-}
+func (b *statusBar) FixedSize() bool { return true }
 
 func (b *statusBar) Draw() {
 	style := tcell.StyleDefault.Background(tcell.ColorLightGray).Foreground(tcell.ColorBlack)
@@ -64,11 +57,6 @@ func (b *statusBar) Draw() {
 	}
 }
 
-func (b *statusBar) HandleEvent(_ tcell.Event) { screen.HideCursor() }
-
-func (b *statusBar) Pos() (x1, y1, width, height int) { return b.x, b.y, b.width, b.height }
-func (b *statusBar) ShowCursor()                      {}
-func (b *statusBar) Defocus()                         {}
 func (b *statusBar) OnClick(x, y int) {
 	if b.j.focus == b {
 		return

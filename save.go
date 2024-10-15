@@ -1,33 +1,25 @@
 package main
 
 import (
+	"log"
 	"os"
 
 	"github.com/gdamore/tcell/v2"
 )
 
 type saveBar struct {
+	baseView
 	jo               *Jo
 	filename         []rune
-	x, y             int
-	width            int
-	height           int
 	cursorX, cursorY int
 	quit             bool
 }
 
 func newSaveBar(j *Jo, quit bool) *saveBar {
-	return &saveBar{jo: j, quit: quit, height: 1}
+	b := &saveBar{jo: j, quit: quit}
+	b.height = 1
+	return b
 }
-
-func (s *saveBar) SetPos(x, y, width, height int) {
-	s.x = x
-	s.y = y
-	s.width = width
-}
-
-func (s *saveBar) Update(string)             {}
-func (s *saveBar) Pos() (int, int, int, int) { return s.x, s.y, s.width, s.height }
 
 func (s *saveBar) Draw() {
 	style := tcell.StyleDefault.Background(tcell.ColorLightYellow).Foreground(tcell.ColorBlack)
@@ -74,7 +66,8 @@ func (s *saveBar) Defocus() {
 	s.jo.status.Set(newStatusBar(s.jo))
 	s.jo.status.Draw()
 }
-func (s *saveBar) Fixed() bool { return true }
+
+func (s *saveBar) FixedSize() bool { return true }
 
 func (s *saveBar) HandleEvent(ev tcell.Event) {
 	k, ok := ev.(*tcell.EventKey)
@@ -96,19 +89,19 @@ func (s *saveBar) HandleEvent(ev tcell.Event) {
 		} else if len(s.filename) != 0 {
 			filename = string(s.filename)
 		} else {
-			// logger.Print("empty filename")
+			// log.Print("empty filename")
 			return
 		}
 
 		f, err := os.Create(filename)
 		if err != nil {
-			logger.Print(err)
+			log.Print(err)
 			return
 		}
 		defer f.Close()
 		_, err = s.jo.editor.WriteTo(f)
 		if err != nil {
-			logger.Print(err)
+			log.Print(err)
 			return
 		}
 

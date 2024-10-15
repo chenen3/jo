@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -10,11 +11,9 @@ import (
 )
 
 type gotoBar struct {
+	baseView
 	jo               *Jo
 	keyword          []rune
-	x, y             int
-	width            int
-	height           int
 	cursorX, cursorY int
 
 	index   int
@@ -24,13 +23,9 @@ type gotoBar struct {
 // TODO: go to symbol or call command
 func newGotoBar(j *Jo, keyword string) *gotoBar {
 	once.Do(loadFileList)
-	return &gotoBar{jo: j, keyword: []rune(keyword), height: 1}
-}
-
-func (g *gotoBar) SetPos(x, y, width, height int) {
-	g.x = x
-	g.y = y
-	g.width = width
+	b := &gotoBar{jo: j, keyword: []rune(keyword)}
+	b.height = 1
+	return b
 }
 
 func (g *gotoBar) Draw() {
@@ -78,8 +73,6 @@ func (g *gotoBar) Draw() {
 
 const optionWidth = 40
 
-func (g *gotoBar) Pos() (x1, y1, width, height int) { return g.x, g.y, g.width, g.height }
-
 func (g *gotoBar) HandleEvent(ev tcell.Event) {
 	k, ok := ev.(*tcell.EventKey)
 	if !ok {
@@ -124,7 +117,7 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 		if len(g.keyword) > 0 && g.keyword[0] == ':' {
 			line, err := strconv.Atoi(string(g.keyword[1:]))
 			if err != nil {
-				logger.Printf("goto: invalid line number: %s", err)
+				log.Printf("goto: invalid line number: %s", err)
 				return
 			}
 			g.gotoLine(line)
@@ -167,7 +160,7 @@ func (g *gotoBar) HandleEvent(ev tcell.Event) {
 
 func (g *gotoBar) gotoLine(line int) {
 	if line < 1 || line > len(g.jo.editor.buf)+1 {
-		logger.Printf("goto: line number out of range")
+		log.Printf("goto: line number out of range")
 		return
 	}
 	g.jo.editor.line = line
@@ -195,7 +188,7 @@ func (g *gotoBar) Defocus() {
 	g.jo.editors.Views[0].Draw() // hide gotoBar
 }
 
-func (g *gotoBar) Fixed() bool {
+func (g *gotoBar) FixedSize() bool {
 	return true
 }
 
@@ -217,7 +210,7 @@ var once sync.Once
 func loadFileList() {
 	dirs, err := os.ReadDir(".")
 	if err != nil {
-		logger.Print(err)
+		log.Print(err)
 		return
 	}
 	for _, d := range dirs {

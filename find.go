@@ -7,17 +7,15 @@ import (
 )
 
 type findBar struct {
+	baseView
 	jo      *Jo
 	keyword []rune
-	x, y    int
-	width   int
-	height  int
 	cursorX int
 	cursorY int
 }
 
 func newFindBar(j *Jo) *findBar {
-	return &findBar{jo: j, height: 1}
+	return &findBar{jo: j, baseView: baseView{height: 1}}
 }
 
 func (f *findBar) OnClick(x, y int) {
@@ -33,12 +31,6 @@ func (f *findBar) Focus() {
 		f.jo.focus.Defocus()
 	}
 	f.jo.focus = f
-}
-
-func (f *findBar) SetPos(x, y, width, height int) {
-	f.x = x
-	f.y = y
-	f.width = width
 }
 
 func (f *findBar) Draw() {
@@ -78,12 +70,7 @@ func (f *findBar) Draw() {
 	}
 }
 
-func (f *findBar) Pos() (x1, y1, x2, y2 int) {
-	return f.x, f.y, f.width, f.height
-}
-
-func (f *findBar) Defocus()    {}
-func (f *findBar) Fixed() bool { return true }
+func (f *findBar) FixedSize() bool { return true }
 
 func (f *findBar) HandleEvent(ev tcell.Event) {
 	k, ok := ev.(*tcell.EventKey)

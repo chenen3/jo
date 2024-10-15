@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"go/token"
 	"io"
+	"log"
 	"os"
 	"slices"
 	"strconv"
@@ -13,11 +14,9 @@ import (
 )
 
 type editor struct {
-	jo     *Jo
-	x, y   int
-	width  int
-	height int
-	style  tcell.Style
+	baseView
+	jo    *Jo
+	style tcell.Style
 
 	// editing buffer
 	buf      [][]rune
@@ -101,7 +100,7 @@ func newEditor(j *Jo, filename string) *editor {
 	var a [][]byte
 	src, err := os.ReadFile(filename)
 	if err != nil {
-		logger.Println(err)
+		log.Println(err)
 		e.buf = append(e.buf, []rune{})
 		return e
 	}
@@ -804,14 +803,6 @@ func (e *editor) accecptSuggestion() {
 	e.Draw() // TODO: no need to refresh the whole screen
 }
 
-func (e *editor) Pos() (x1, y1, width, height int) {
-	return e.x, e.y, e.width, e.height
-}
-
-func (e *editor) Defocus() {
-	// TODO: format
-}
-
 func (e *editor) ClearFind() {
 	e.findKey = ""
 	e.findMatch = nil
@@ -825,8 +816,6 @@ func (e *editor) SetPos(x, y, width, height int) {
 	e.height = height
 }
 
-func (e *editor) Fixed() bool { return false }
-
 func (e *editor) Load(filename string) {
 	if filename == "" {
 		return
@@ -837,7 +826,7 @@ func (e *editor) Load(filename string) {
 
 	src, err := os.ReadFile(filename)
 	if err != nil {
-		logger.Println(err)
+		log.Println(err)
 		return
 	}
 	a := bytes.Split(src, []byte{'\n'})

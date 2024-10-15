@@ -5,15 +5,15 @@ import (
 )
 
 type titleBar struct {
-	e             *editor
-	x, y          int
-	width, height int
-	names         []string
-	index         int // indicate current editor
+	baseView
+	e     *editor
+	names []string
+	index int // indicate current name
 }
 
 func newTitleBar(e *editor, name string) *titleBar {
-	t := &titleBar{e: e, height: 1}
+	t := &titleBar{e: e}
+	t.height = 1
 	if name != "" {
 		t.names = append(t.names, name)
 	}
@@ -60,21 +60,7 @@ func (t *titleBar) Close() {
 	}
 }
 
-func (t *titleBar) HandleEvent(e tcell.Event) {}
-func (t *titleBar) ShowCursor()               {}
-func (t *titleBar) Focus()                    {}
-func (t *titleBar) Defocus()                  {}
-func (t *titleBar) Fixed() bool               { return true }
-
-func (t *titleBar) SetPos(x, y, width, height int) {
-	t.x = x
-	t.y = y
-	t.width = width
-}
-
-func (t *titleBar) Pos() (x1, y1, width, height int) {
-	return t.x, t.y, t.width, t.height
-}
+func (t *titleBar) FixedSize() bool { return true }
 
 func (t *titleBar) Draw() {
 	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)

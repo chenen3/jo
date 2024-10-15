@@ -13,36 +13,36 @@ type Jo struct {
 	status  *statusView
 	focus   View // handle event
 	done    chan struct{}
-	stack   *vstack // layout
+	body    *vstack
 	mouseX  int
 	mouseY  int
 }
 
 func (j *Jo) Draw() {
-	j.stack.Draw()
+	j.body.Draw()
 }
 
-var logger *log.Logger
 var screen tcell.Screen
 
 // A multiplier to be used on the deltaX and deltaY of mouse wheel scroll events
 const wheelScrollSensitivity = 0.125
 
 func main() {
-	tmp, err := os.OpenFile("/tmp/jo.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	logFile, err := os.OpenFile("/tmp/jo.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer tmp.Close()
-	logger = log.New(tmp, "", log.LstdFlags|log.Lshortfile)
+	defer logFile.Close()
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.SetOutput(logFile)
 
 	s, err := tcell.NewScreen()
 	if err != nil {
-		logger.Print(err)
+		log.Print(err)
 		return
 	}
 	if err = s.Init(); err != nil {
-		logger.Print(err)
+		log.Print(err)
 		return
 	}
 	screen = s
@@ -64,10 +64,10 @@ func main() {
 	j.editor = newEditor(j, filename)
 	j.editors = HStack(j.editor)
 	j.status = &statusView{newStatusBar(j)}
-	j.stack = VStack(j.editors, j.status)
+	j.body = VStack(j.editors, j.status)
 
 	width, height := screen.Size()
-	j.stack.SetPos(0, 0, width, height)
+	j.body.SetPos(0, 0, width, height)
 	j.Draw()
 	j.editor.Focus()
 	screen.Show()
@@ -82,7 +82,7 @@ func main() {
 		switch ev := ev.(type) {
 		case *tcell.EventResize:
 			width, height := screen.Size()
-			j.stack.SetPos(0, 0, width, height)
+			j.body.SetPos(0, 0, width, height)
 			j.Draw()
 			screen.Sync()
 			continue
@@ -90,7 +90,7 @@ func main() {
 			x, y := ev.Position()
 			switch ev.Buttons() {
 			case tcell.Button1:
-				j.stack.OnClick(x, y)
+				j.body.OnClick(x, y)
 			case tcell.WheelUp:
 				// scroll the editor that under the mouse, even when not being focused
 				for _, v := range j.editors.Views {
@@ -171,9 +171,4 @@ func main() {
 		j.focus.HandleEvent(ev)
 		screen.Show()
 	}
-}
-
-func inView(v View, x, y int) bool {
-	x1, y1, w, h := v.Pos()
-	return x1 <= x && x < x1+w && y1 <= y && y < y1+h
 }
