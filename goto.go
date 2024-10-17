@@ -9,7 +9,7 @@ import (
 )
 
 type gotoBar struct {
-	baseView
+	BaseView
 	keyword []rune
 	cursorX int
 	cursorY int
@@ -17,22 +17,8 @@ type gotoBar struct {
 	options []string
 }
 
-func newGotoBar() *gotoBar {
+func (g *gotoBar) Draw(screen tcell.Screen) {
 	once.Do(loadFileList)
-	b := &gotoBar{}
-	b.width = optionWidth
-	b.height = 1
-	width, _ := screen.Size()
-	b.x = (width - b.width) / 2
-	b.y = 3
-	return b
-}
-
-func (g *gotoBar) SetPos(int, int, int, int) {
-	// gotoBar has fixed postion, so disable SetPos
-}
-
-func (g *gotoBar) Draw() {
 	g.height = 1
 	style := tcell.StyleDefault.Background(tcell.ColorLightGray).Foreground(tcell.ColorBlack)
 	for y := g.y; y < g.y+g.height; y++ {
@@ -81,15 +67,6 @@ func (g *gotoBar) Draw() {
 }
 
 const optionWidth = 40
-
-func (g *gotoBar) OnClick(x, y int) {
-	g.OnFocus()
-}
-
-func (g *gotoBar) OnFocus() {
-	g.baseView.OnFocus()
-	screen.ShowCursor(g.cursorX, g.cursorY)
-}
 
 var files []string
 var once sync.Once

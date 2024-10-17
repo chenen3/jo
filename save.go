@@ -5,12 +5,11 @@ import (
 )
 
 type saveBar struct {
-	baseView
-	name             []rune
-	cursorX, cursorY int
+	BaseView
+	name []rune
 }
 
-func (s *saveBar) Draw() {
+func (s *saveBar) Draw(screen tcell.Screen) {
 	style := tcell.StyleDefault.Background(tcell.ColorLightYellow).Foreground(tcell.ColorBlack)
 	for y := s.y; y < s.y+s.height; y++ {
 		for x := s.x; x < s.x+s.width; x++ {
@@ -48,12 +47,3 @@ func (s *saveBar) Draw() {
 }
 
 func (s *saveBar) FixedSize() bool { return true }
-
-func (s *saveBar) OnClick(x, y int) {
-	s.OnFocus()
-}
-
-func (s *saveBar) OnFocus() {
-	s.baseView.OnFocus()
-	screen.ShowCursor(s.cursorX, s.cursorY)
-}

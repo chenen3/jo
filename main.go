@@ -13,8 +13,6 @@ import (
 // recent focused editor
 var recentE *Editor
 
-var screen tcell.Screen
-
 // A multiplier to be used on the deltaX and deltaY of mouse wheel scroll events
 const scrollSensitivity = 0.125
 
@@ -27,44 +25,31 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.SetOutput(logFile)
 
-	s, err := tcell.NewScreen()
-	if err != nil {
-		log.Print(err)
-		return
-	}
-	if err = s.Init(); err != nil {
-		log.Print(err)
-		return
-	}
-	screen = s
-	screen.SetStyle(tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset))
-	screen.EnableMouse()
-	screen.SetCursorStyle(tcell.CursorStyleBlinkingBlock)
-	screen.EnablePaste()
-	screen.Clear()
-	defer screen.Fini()
-
 	var filename string
 	if len(os.Args) > 1 {
 		filename = os.Args[1]
+	}
+
+	app, err := NewApp()
+	if err != nil {
+		log.Print(err)
+		return
 	}
 
 	statusBar := newStatusBar()
 	recentE = newEditor(filename, statusBar.Status)
 	editors := HStack(recentE)
 	body := VStack(editors, statusBar)
-	width, height := screen.Size()
-	body.SetPos(0, 0, width, height)
-
-	app := NewApp()
 	app.SetBody(body)
 
+	width, height := app.Screen().Size()
 	fb := new(findBar)
 	fb.SetPos(width-40, 1, 40, 1)
 	fb.Handle(tcell.KeyRune, func(k *tcell.EventKey) {
 		fb.keyword = append(fb.keyword, k.Rune())
 		recentE.Find(string(fb.keyword))
-		fb.Draw()
+		recentE.Draw(app.Screen())
+		fb.Draw(app.Screen())
 	})
 	fb.Handle(tcell.KeyBackspace, func(*tcell.EventKey) {
 		if len(fb.keyword) == 0 {
@@ -73,11 +58,12 @@ func main() {
 		fb.keyword = fb.keyword[:len(fb.keyword)-1]
 		if len(fb.keyword) == 0 {
 			recentE.ClearFind()
-			recentE.Draw()
+			recentE.Draw(app.Screen())
 		} else {
 			recentE.Find(string(fb.keyword))
+			recentE.Draw(app.Screen())
 		}
-		fb.Draw()
+		fb.Draw(app.Screen())
 	})
 	fb.Handle(tcell.KeyBackspace2, func(*tcell.EventKey) {
 		if len(fb.keyword) == 0 {
@@ -86,39 +72,43 @@ func main() {
 		fb.keyword = fb.keyword[:len(fb.keyword)-1]
 		if len(fb.keyword) == 0 {
 			recentE.ClearFind()
-			recentE.Draw()
+			recentE.Draw(app.Screen())
 		} else {
 			recentE.Find(string(fb.keyword))
+			recentE.Draw(app.Screen())
 		}
-		fb.Draw()
+		fb.Draw(app.Screen())
 	})
 	fb.Handle(tcell.KeyEnter, func(*tcell.EventKey) {
 		recentE.FindNext()
+		recentE.Draw(app.Screen())
 	})
 	fb.Handle(tcell.KeyDown, func(*tcell.EventKey) {
 		recentE.FindNext()
+		recentE.Draw(app.Screen())
 	})
 	fb.Handle(tcell.KeyUp, func(*tcell.EventKey) {
 		recentE.FindPrev()
+		recentE.Draw(app.Screen())
 	})
 	fb.Handle(tcell.KeyESC, func(*tcell.EventKey) {
 		fb.keyword = nil
 		app.Focus(recentE)
-		recentE.Draw() // cover the findbar
+		recentE.Draw(app.Screen()) // cover the findbar
 	})
 
 	sb := new(saveBar)
 	sb.SetPos((width-40)/2, (height-3)/2, 40, 3) // align center
 	sb.Handle(tcell.KeyRune, func(k *tcell.EventKey) {
 		sb.name = append(sb.name, k.Rune())
-		sb.Draw()
+		sb.Draw(app.Screen())
 	})
 	sb.Handle(tcell.KeyBackspace2, func(k *tcell.EventKey) {
 		if len(sb.name) == 0 {
 			return
 		}
 		sb.name = sb.name[:len(sb.name)-1]
-		sb.Draw()
+		sb.Draw(app.Screen())
 	})
 
 	sb.Handle(tcell.KeyEnter, func(k *tcell.EventKey) {
@@ -139,23 +129,24 @@ func main() {
 
 		recentE.Load(string(sb.name))
 		app.Focus(recentE)
-		recentE.Draw()
+		recentE.Draw(app.Screen())
 	})
 	sb.Handle(tcell.KeyESC, func(k *tcell.EventKey) {
 		sb.name = nil
 		app.Focus(recentE)
-		recentE.Draw() // cover the savebar
+		recentE.Draw(app.Screen()) // cover the savebar
 	})
 
-	gb := newGotoBar()
+	gb := new(gotoBar)
+	gb.SetPos((width-optionWidth)/2, 3, optionWidth, 1)
 	gb.Handle(tcell.KeyEsc, func(*tcell.EventKey) {
 		gb.keyword = nil
-		recentE.Draw()
+		recentE.Draw(app.Screen())
 		app.Focus(recentE)
 	})
 	gb.Handle(tcell.KeyRune, func(k *tcell.EventKey) {
-		defer gb.Draw()
-		recentE.Draw() // clear previous options
+		defer gb.Draw(app.Screen())
+		recentE.Draw(app.Screen()) // clear previous options
 		gb.keyword = append(gb.keyword, k.Rune())
 		if gb.keyword[0] == ':' {
 			return
@@ -172,8 +163,8 @@ func main() {
 		if len(gb.keyword) == 0 {
 			return
 		}
-		defer gb.Draw()
-		recentE.Draw() // clear previous options
+		defer gb.Draw(app.Screen())
+		recentE.Draw(app.Screen()) // clear previous options
 		gb.keyword = gb.keyword[:len(gb.keyword)-1]
 		if len(gb.keyword) == 0 {
 			return
@@ -208,7 +199,7 @@ func main() {
 			} else {
 				recentE.startLine = line - recentE.PageSize()/2
 			}
-			recentE.Draw()
+			recentE.Draw(app.Screen())
 			app.Focus(recentE)
 			gb.index = 0
 			gb.keyword = nil
@@ -217,7 +208,7 @@ func main() {
 		// go to file
 		if len(gb.options) > 0 {
 			recentE.Load(gb.options[gb.index])
-			recentE.Draw()
+			recentE.Draw(app.Screen())
 			app.Focus(recentE)
 			gb.keyword = nil
 			gb.index = 0
@@ -228,14 +219,14 @@ func main() {
 		if gb.index < 0 {
 			gb.index = len(files) - 1
 		}
-		gb.Draw()
+		gb.Draw(app.Screen())
 	})
 	gb.Handle(tcell.KeyDown, func(*tcell.EventKey) {
 		gb.index++
 		if gb.index > len(files)-1 {
 			gb.index = 0
 		}
-		gb.Draw()
+		gb.Draw(app.Screen())
 	})
 	gb.Handle(tcell.KeyCtrlBackslash, func(*tcell.EventKey) {
 		e := newEditor(gb.options[gb.index], statusBar.Status)
@@ -250,7 +241,7 @@ func main() {
 	})
 	app.Handle(tcell.KeyCtrlF, func(*tcell.EventKey) {
 		app.Focus(fb)
-		fb.Draw()
+		fb.Draw(app.Screen())
 	})
 	app.Handle(tcell.KeyCtrlS, func(*tcell.EventKey) {
 		if !recentE.dirty {
@@ -258,7 +249,7 @@ func main() {
 		}
 		if recentE.filename == "" {
 			app.Focus(sb)
-			sb.Draw()
+			sb.Draw(app.Screen())
 		} else {
 			f, err := os.Create(recentE.filename)
 			if err != nil {
@@ -274,18 +265,18 @@ func main() {
 		}
 	})
 	app.Handle(tcell.KeyCtrlP, func(*tcell.EventKey) {
-		gb.Draw()
+		gb.Draw(app.Screen())
 		app.Focus(gb)
 	})
 	app.Handle(tcell.KeyCtrlG, func(*tcell.EventKey) {
 		gb.keyword = []rune{':'}
-		gb.Draw()
+		gb.Draw(app.Screen())
 		app.Focus(gb)
 	})
 	app.Handle(tcell.KeyCtrlW, func(*tcell.EventKey) {
 		if recentE.dirty {
 			app.Focus(sb)
-			sb.Draw()
+			sb.Draw(app.Screen())
 			return
 		}
 

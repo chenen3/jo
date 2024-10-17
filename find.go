@@ -7,26 +7,18 @@ import (
 )
 
 type findBar struct {
-	baseView
+	BaseView
 	keyword []rune
-	cursorX int
-	cursorY int
 }
 
 // TODO: consider adding the cursor to baseView
 func (f *findBar) SetPos(x, y, w, h int) {
-	f.baseView.SetPos(x, y, w, h)
+	f.BaseView.SetPos(x, y, w, h)
 	f.cursorX = x
 	f.cursorY = y
 }
 
-// TODO: show cursor in baseView.OnFocus
-func (f *findBar) OnFocus() {
-	f.baseView.OnFocus()
-	screen.ShowCursor(f.cursorX, f.cursorY)
-}
-
-func (f *findBar) Draw() {
+func (f *findBar) Draw(screen tcell.Screen) {
 	style := tcell.StyleDefault.Background(tcell.ColorLightYellow).Foreground(tcell.ColorBlack)
 	for y := f.y; y < f.y+f.height; y++ {
 		for x := f.x; x < f.x+f.width; x++ {
