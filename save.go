@@ -1,24 +1,13 @@
 package main
 
 import (
-	"log"
-	"os"
-
 	"github.com/gdamore/tcell/v2"
 )
 
 type saveBar struct {
 	baseView
-	jo               *Jo
-	filename         []rune
+	name             []rune
 	cursorX, cursorY int
-	quit             bool
-}
-
-func newSaveBar(j *Jo, quit bool) *saveBar {
-	b := &saveBar{jo: j, quit: quit}
-	b.height = 1
-	return b
 }
 
 func (s *saveBar) Draw() {
@@ -29,117 +18,42 @@ func (s *saveBar) Draw() {
 		}
 	}
 
-	prompt := "save changes?"
-	if s.jo.editor.filename == "" {
-		prompt = "save as:"
-	}
-
+	prompt := "save as: "
 	s.cursorX, s.cursorY = s.x, s.y
 	for _, c := range prompt {
 		screen.SetContent(s.cursorX, s.cursorY, c, nil, style)
 		s.cursorX++
 	}
 
-	if s.jo.editor.filename == "" && len(s.filename) == 0 {
+	if len(s.name) == 0 {
 		placeholder := "file name"
 		for i, c := range placeholder {
 			screen.SetContent(s.cursorX+i, s.cursorY, c, nil, style.Foreground(tcell.ColorGray))
 		}
-	}
-
-	if s.jo.editor.filename == "" && len(s.filename) != 0 {
-		for _, c := range s.filename {
+	} else {
+		for _, c := range s.name {
 			screen.SetContent(s.cursorX, s.cursorY, c, nil, style)
 			s.cursorX++
 		}
 	}
-	screen.ShowCursor(s.cursorX, s.cursorY)
-
-	keymap := "[enter]save | [esc]cancel | [ctrl+w]discard"
-	for i, c := range keymap {
-		// align right
-		screen.SetContent(s.x+s.width-len(keymap)+i, s.y, c, nil, style)
+	if s.Focused() {
+		screen.ShowCursor(s.cursorX, s.cursorY)
 	}
-}
 
-func (s *saveBar) Defocus() {
-	s.jo.status.Set(newStatusBar(s.jo))
-	s.jo.status.Draw()
+	keymap := "<enter>save  <esc>cancel"
+	for i, c := range keymap {
+		// align center
+		screen.SetContent(s.x+(s.width-len(keymap))/2+i, s.y+s.height-1, c, nil, style)
+	}
 }
 
 func (s *saveBar) FixedSize() bool { return true }
 
-func (s *saveBar) HandleEvent(ev tcell.Event) {
-	k, ok := ev.(*tcell.EventKey)
-	if !ok {
-		return
-	}
-
-	switch k.Key() {
-	case tcell.KeyRune:
-		if s.jo.editor.filename != "" {
-			return
-		}
-		s.filename = append(s.filename, k.Rune())
-		s.Draw()
-	case tcell.KeyCtrlS, tcell.KeyEnter:
-		var filename string
-		if s.jo.editor.filename != "" {
-			filename = s.jo.editor.filename
-		} else if len(s.filename) != 0 {
-			filename = string(s.filename)
-		} else {
-			// log.Print("empty filename")
-			return
-		}
-
-		f, err := os.Create(filename)
-		if err != nil {
-			log.Print(err)
-			return
-		}
-		defer f.Close()
-		_, err = s.jo.editor.WriteTo(f)
-		if err != nil {
-			log.Print(err)
-			return
-		}
-
-		if s.quit {
-			close(s.jo.done)
-			return
-		}
-		if s.jo.editor.filename == "" {
-			s.jo.editor.filename = filename
-			s.jo.editor.titleBar.Add(filename)
-			s.jo.editor.titleBar.Draw()
-		}
-		s.jo.editor.Focus()
-	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		if s.jo.editor.filename != "" {
-			return
-		}
-		if len(s.filename) == 0 {
-			return
-		}
-		s.filename = s.filename[:len(s.filename)-1]
-		s.Draw()
-	case tcell.KeyESC:
-		s.jo.editor.Focus()
-	}
-}
-
 func (s *saveBar) OnClick(x, y int) {
-	s.Focus()
+	s.OnFocus()
 }
 
-func (s *saveBar) Focus() {
-	if s.jo.focus == s {
-		return
-	}
-	if s.jo.focus != nil {
-		s.jo.focus.Defocus()
-	}
-	s.jo.focus = s
+func (s *saveBar) OnFocus() {
+	s.baseView.OnFocus()
 	screen.ShowCursor(s.cursorX, s.cursorY)
 }

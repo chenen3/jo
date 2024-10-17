@@ -9,9 +9,11 @@ type View interface {
 	Pos() (x1, y1, width, height int)
 	Draw()
 	FixedSize() bool
-	HandleEvent(tcell.Event) // will be called on focused
-	Focus()
-	Defocus()
+	// HandleKey is used to operate inside a view.
+	// When interacting with multiple views, use [baseView.Handle] instead.
+	HandleKey(*tcell.EventKey)
+	OnFocus()
+	OnBlur()
 	OnClick(x, y int)
 }
 
@@ -20,6 +22,7 @@ type baseView struct {
 	width, height int
 	fixedSize     bool
 	focused       bool
+	keymap        map[tcell.Key]func(*tcell.EventKey)
 }
 
 func (v *baseView) SetPos(x, y, width, height int) {
@@ -30,11 +33,35 @@ func (v *baseView) SetPos(x, y, width, height int) {
 }
 
 func (v *baseView) Pos() (int, int, int, int) { return v.x, v.y, v.width, v.height }
-func (v *baseView) Focus()                    { v.focused = true }
-func (v *baseView) Focused() bool             { return v.focused }
-func (v *baseView) Defocus()                  { v.focused = false }
 func (v *baseView) FixedSize() bool           { return v.fixedSize }
-func (v *baseView) HandleEvent(tcell.Event)   {}
+func (v *baseView) OnFocus()                  { v.focused = true }
+func (v *baseView) OnBlur()                   { v.focused = false }
+func (v *baseView) Focused() bool             { return v.focused }
+
+// TODO: focus
+func (v *baseView) OnClick(int, int) {}
+
+// Handle register callback function for the given key,
+// it is intended to be used for interaction between multiple views.
+func (v *baseView) Handle(k tcell.Key, f func(*tcell.EventKey)) {
+	if v.keymap == nil {
+		v.keymap = make(map[tcell.Key]func(*tcell.EventKey))
+	}
+	if _, ok := v.keymap[k]; ok {
+		panic("repeated key handler")
+	}
+	v.keymap[k] = f
+}
+
+func (v *baseView) HandleKey(k *tcell.EventKey) {
+	if v.keymap == nil {
+		return
+	}
+	cb, ok := v.keymap[k.Key()]
+	if ok {
+		cb(k)
+	}
+}
 
 type vstack struct {
 	baseView

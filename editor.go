@@ -2,11 +2,11 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"go/token"
 	"io"
 	"log"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -15,7 +15,6 @@ import (
 
 type editor struct {
 	baseView
-	jo    *Jo
 	style tcell.Style
 
 	// editing buffer
@@ -44,6 +43,8 @@ type editor struct {
 	}
 
 	titleBar *titleBar
+
+	status *bindStr
 }
 
 func (e *editor) OnClick(x, y int) {
@@ -57,28 +58,19 @@ func (e *editor) OnClick(x, y int) {
 		e.Draw()
 	}
 	e.setCursor(x, y)
-	e.Focus()
-	e.jo.status.Draw()
+	e.OnFocus()
 }
 
-func (e *editor) Focus() {
-	e.ShowCursor()
-	if e.jo.focus == e {
-		return
-	}
-	if e.jo.focus != nil {
-		e.jo.focus.Defocus()
-	}
-	e.jo.focus = e
-	e.jo.editor = e
+func (e *editor) OnFocus() {
+	e.baseView.OnFocus()
+	e.showCursor()
 }
 
 var tokenTree = new(node)
 
-func newEditor(j *Jo, filename string) *editor {
+func newEditor(filename string, status *bindStr) *editor {
 	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	e := &editor{
-		jo:        j,
 		style:     style,
 		startLine: 1,
 		line:      1,
@@ -88,6 +80,7 @@ func newEditor(j *Jo, filename string) *editor {
 			style: style.Foreground(tcell.ColorGray),
 		},
 		lastPos: make(map[string][3]int),
+		status:  status,
 	}
 
 	e.titleBar = newTitleBar(e, filename)
@@ -222,6 +215,7 @@ func (e *editor) Draw() {
 	}
 	e.lineBar.endLine = endLine
 	e.lineBar.render()
+	e.showCursor()
 
 	for y := e.by1; y <= e.by2; y++ {
 		for x := e.bx1; x <= e.bx2; x++ {
@@ -253,9 +247,14 @@ func (e *editor) cursorLineAdd(delta int) {
 	if e.column > len(e.buf[e.line-1])+1 {
 		e.column = len(e.buf[e.line-1]) + 1
 	}
+	e.status.Set(fmt.Sprintf("line %d, column %d", e.line, e.Column()))
 }
 
 func (e *editor) cursorColAdd(delta int) {
+	defer func() {
+		e.status.Set(fmt.Sprintf("line %d, column %d", e.line, e.Column()))
+	}()
+
 	col := e.column + delta
 	if 1 <= col && col <= len(e.buf[e.line-1])+1 {
 		e.column = col
@@ -310,9 +309,14 @@ func (e *editor) setCursor(x, y int) {
 		col = len(e.buf[line-1]) + 1
 	}
 	e.line, e.column = line, col
+	e.status.Set(fmt.Sprintf("line %d, column %d", e.line, col))
 }
 
-func (e *editor) ShowCursor() {
+func (e *editor) showCursor() {
+	if !e.Focused() {
+		return
+	}
+
 	tabs := leadingTabs(e.buf[e.line-1])
 	var x int
 	if e.column <= tabs {
@@ -321,7 +325,9 @@ func (e *editor) ShowCursor() {
 		padding := tabs * (tabWidth - 1)
 		x = e.bx1 + e.column + padding - 1
 	}
-	screen.ShowCursor(x, e.by1+e.line-e.startLine)
+	y := e.by1 + e.line - e.startLine
+	// may hide cursor if it is out of the visible area
+	screen.ShowCursor(x, y)
 }
 
 func (e *editor) cursorUp() {
@@ -371,7 +377,7 @@ func (e *editor) cursorLineEnd() {
 	e.cursorColAdd(len(e.buf[e.line-1]) - e.column + 1)
 }
 
-func (e *editor) scrollUp(delta int) {
+func (e *editor) ScrollUp(delta int) {
 	if e.startLine == 1 {
 		return
 	}
@@ -381,9 +387,10 @@ func (e *editor) scrollUp(delta int) {
 		e.startLine -= delta
 	}
 	e.Draw()
+	e.showCursor()
 }
 
-func (e *editor) scrollDown(delta int) {
+func (e *editor) ScrollDown(delta int) {
 	if e.startLine >= len(e.buf)-e.PageSize()+1 {
 		return
 	}
@@ -392,6 +399,7 @@ func (e *editor) scrollDown(delta int) {
 		e.startLine = len(e.buf) - e.PageSize() + 1
 	}
 	e.Draw()
+	e.showCursor()
 }
 
 func (e *editor) writeRune(r rune) {
@@ -622,20 +630,14 @@ func (e *editor) FindPrev() {
 	e.Draw()
 }
 
-func (e *editor) HandleEvent(event tcell.Event) {
-	ev, ok := event.(*tcell.EventKey)
-	if !ok {
-		return
-	}
-
-	defer e.ShowCursor()
-	e.jo.status.Draw()
+func (e *editor) HandleKey(ev *tcell.EventKey) {
+	defer e.showCursor()
 	switch ev.Key() {
 	case tcell.KeyPgUp:
-		e.scrollUp(e.PageSize() - 1)
+		e.ScrollUp(e.PageSize() - 1)
 		e.cursorLineAdd(-(e.PageSize() - 1))
 	case tcell.KeyPgDn:
-		e.scrollDown(e.PageSize() - 1)
+		e.ScrollDown(e.PageSize() - 1)
 		e.cursorLineAdd(e.PageSize() - 1)
 	case tcell.KeyHome:
 		e.cursorLineStart()
@@ -728,12 +730,6 @@ func (e *editor) HandleEvent(event tcell.Event) {
 			e.suggest = nil
 			e.Draw()
 			return
-		}
-		if _, ok := e.jo.status.View.(*findBar); ok {
-			e.ClearFind()
-			e.Draw()
-			e.jo.status.Set(newStatusBar(e.jo))
-			e.jo.status.Draw()
 		}
 	}
 }
@@ -859,36 +855,18 @@ func (e *editor) Load(filename string) {
 	e.dirty = false
 	e.suggest = nil
 	e.titleBar.Add(filename)
+	e.status.Set(fmt.Sprintf("line %d, column %d", e.line, e.Column()))
 }
 
-func (e *editor) Close() {
-	if len(e.titleBar.names) > 0 {
-		e.titleBar.Close()
-		if len(e.titleBar.names) > 0 {
-			e.Load(e.titleBar.names[e.titleBar.index])
-			e.Focus()
-			return
-		}
-	}
-
-	// delete editor
-	if len(e.jo.editors.Views) == 1 {
-		close(e.jo.done)
+func (e *editor) CloseBuffer() {
+	if len(e.titleBar.names) == 0 {
 		return
 	}
-	var i int
-	for i = range e.jo.editors.Views {
-		if e.jo.editors.Views[i] == e {
-			break
-		}
+
+	e.titleBar.Close()
+	if len(e.titleBar.names) > 0 {
+		e.Load(e.titleBar.names[e.titleBar.index])
 	}
-	j := i - 1
-	if j < 0 {
-		j = 0
-	}
-	prevE := e.jo.editors.Views[j].(*editor)
-	prevE.Focus()
-	e.jo.editors.Views = slices.Delete(e.jo.editors.Views, i, i+1)
 }
 
 type lineBar struct {
@@ -928,7 +906,7 @@ func buildTokenTree(tree *node, buf [][]rune) {
 		infos := parseToken(buf[i])
 		for _, info := range infos {
 			t := string(buf[i][info.off : info.off+info.len])
-			if token.IsIdentifier(t) {
+			if token.IsKeyword(t) || token.IsIdentifier(t) {
 				tree.set(t)
 			}
 		}

@@ -27,13 +27,13 @@ func (t *titleBar) OnClick(x, y int) {
 		if start <= x && x <= end {
 			if i == t.index {
 				// clicked on current title
-				t.e.Focus()
+				t.e.OnFocus()
 				return
 			}
 			t.index = i
 			t.e.Load(name)
 			t.e.Draw()
-			t.e.Focus()
+			t.e.OnFocus()
 			return
 		}
 		start = end + 1
