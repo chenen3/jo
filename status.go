@@ -5,13 +5,12 @@ import (
 )
 
 type statusBar struct {
-	j *App
 	baseView
 	Status *bindStr
 }
 
-func newStatusBar(j *App) *statusBar {
-	b := &statusBar{j: j}
+func newStatusBar() *statusBar {
+	b := &statusBar{}
 	b.height = 1
 	b.Status = BindStr("line 1, column 1", b.Draw)
 	return b

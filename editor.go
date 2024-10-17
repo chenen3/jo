@@ -13,7 +13,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-type editor struct {
+type Editor struct {
 	baseView
 	style tcell.Style
 
@@ -47,7 +47,7 @@ type editor struct {
 	status *bindStr
 }
 
-func (e *editor) OnClick(x, y int) {
+func (e *Editor) OnClick(x, y int) {
 	if inView(e.titleBar, x, y) {
 		e.titleBar.OnClick(x, y)
 		return
@@ -61,16 +61,17 @@ func (e *editor) OnClick(x, y int) {
 	e.OnFocus()
 }
 
-func (e *editor) OnFocus() {
+func (e *Editor) OnFocus() {
 	e.baseView.OnFocus()
 	e.showCursor()
+	recentE = e
 }
 
 var tokenTree = new(node)
 
-func newEditor(filename string, status *bindStr) *editor {
+func newEditor(filename string, status *bindStr) *Editor {
 	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
-	e := &editor{
+	e := &Editor{
 		style:     style,
 		startLine: 1,
 		line:      1,
@@ -114,7 +115,7 @@ func newEditor(filename string, status *bindStr) *editor {
 }
 
 // the number of lines visible in the editor view
-func (e *editor) PageSize() int { return e.by2 - e.by1 + 1 }
+func (e *Editor) PageSize() int { return e.by2 - e.by1 + 1 }
 
 const tabWidth = 4
 
@@ -130,7 +131,7 @@ func leadingTabs(line []rune) int {
 	return n
 }
 
-func (e *editor) renderLine(line int) {
+func (e *Editor) renderLine(line int) {
 	text := e.buf[line-1]
 	for x := e.bx1; x <= e.bx2; x++ {
 		if x <= e.bx1+len(text)-1 {
@@ -192,7 +193,7 @@ func (e *editor) renderLine(line int) {
 	}
 }
 
-func (e *editor) Draw() {
+func (e *Editor) Draw() {
 	e.titleBar.Draw()
 	lineBarWidth := 2
 	for i := len(e.buf); i > 0; i = i / 10 {
@@ -231,7 +232,7 @@ func (e *editor) Draw() {
 	}
 }
 
-func (e *editor) cursorLineAdd(delta int) {
+func (e *Editor) cursorLineAdd(delta int) {
 	if delta == 0 {
 		return
 	}
@@ -250,7 +251,7 @@ func (e *editor) cursorLineAdd(delta int) {
 	e.status.Set(fmt.Sprintf("line %d, column %d", e.line, e.Column()))
 }
 
-func (e *editor) cursorColAdd(delta int) {
+func (e *Editor) cursorColAdd(delta int) {
 	defer func() {
 		e.status.Set(fmt.Sprintf("line %d, column %d", e.line, e.Column()))
 	}()
@@ -282,7 +283,7 @@ func (e *editor) cursorColAdd(delta int) {
 	e.column = 1
 }
 
-func (e *editor) setCursor(x, y int) {
+func (e *Editor) setCursor(x, y int) {
 	if y < e.by1 {
 		y = e.by1
 	}
@@ -312,7 +313,7 @@ func (e *editor) setCursor(x, y int) {
 	e.status.Set(fmt.Sprintf("line %d, column %d", e.line, col))
 }
 
-func (e *editor) showCursor() {
+func (e *Editor) showCursor() {
 	if !e.Focused() {
 		return
 	}
@@ -330,7 +331,7 @@ func (e *editor) showCursor() {
 	screen.ShowCursor(x, y)
 }
 
-func (e *editor) cursorUp() {
+func (e *Editor) cursorUp() {
 	if e.line == 1 {
 		return
 	}
@@ -343,7 +344,7 @@ func (e *editor) cursorUp() {
 	e.cursorLineAdd(-1)
 }
 
-func (e *editor) cursorDown() {
+func (e *Editor) cursorDown() {
 	if e.line == len(e.buf) {
 		// end of file
 		return
@@ -360,7 +361,7 @@ func (e *editor) cursorDown() {
 }
 
 // go to the first non-whitespace character in line
-func (e *editor) cursorLineStart() {
+func (e *Editor) cursorLineStart() {
 	for i, c := range e.buf[e.line-1] {
 		if c != ' ' && c != '\t' {
 			e.column = i + 1
@@ -370,14 +371,14 @@ func (e *editor) cursorLineStart() {
 	e.column = 1
 }
 
-func (e *editor) cursorLineEnd() {
+func (e *Editor) cursorLineEnd() {
 	if e.column == len(e.buf[e.line-1])+1 {
 		return
 	}
 	e.cursorColAdd(len(e.buf[e.line-1]) - e.column + 1)
 }
 
-func (e *editor) ScrollUp(delta int) {
+func (e *Editor) ScrollUp(delta int) {
 	if e.startLine == 1 {
 		return
 	}
@@ -390,7 +391,7 @@ func (e *editor) ScrollUp(delta int) {
 	e.showCursor()
 }
 
-func (e *editor) ScrollDown(delta int) {
+func (e *Editor) ScrollDown(delta int) {
 	if e.startLine >= len(e.buf)-e.PageSize()+1 {
 		return
 	}
@@ -402,7 +403,7 @@ func (e *editor) ScrollDown(delta int) {
 	e.showCursor()
 }
 
-func (e *editor) writeRune(r rune) {
+func (e *Editor) writeRune(r rune) {
 	text := e.buf[e.line-1]
 	rs := make([]rune, len(text[e.column-1:]))
 	copy(rs, text[e.column-1:])
@@ -413,7 +414,7 @@ func (e *editor) writeRune(r rune) {
 	e.dirty = true
 }
 
-func (e *editor) writeString(s string) {
+func (e *Editor) writeString(s string) {
 	text := e.buf[e.line-1]
 	rs := make([]rune, len(text[e.column-1:]))
 	copy(rs, text[e.column-1:])
@@ -425,14 +426,14 @@ func (e *editor) writeString(s string) {
 }
 
 // Line return current line number in editor
-func (e *editor) Line() int {
+func (e *Editor) Line() int {
 	return e.line
 }
 
 // Column return current column number in editor.
 // Note that it is intended for the statusBar,
 // instead of editor buffer.
-func (e *editor) Column() int {
+func (e *Editor) Column() int {
 	var col int
 	tabs := leadingTabs(e.buf[e.line-1])
 	if e.column <= tabs {
@@ -444,7 +445,7 @@ func (e *editor) Column() int {
 	return col
 }
 
-func (e *editor) deleteLeft() {
+func (e *Editor) deleteLeft() {
 	e.dirty = true
 	// cursor at line start, merge the line to previous one
 	if e.column == 1 {
@@ -473,20 +474,20 @@ func (e *editor) deleteLeft() {
 	e.cursorColAdd(-1)
 }
 
-func (e *editor) deleteToLineStart() {
+func (e *Editor) deleteToLineStart() {
 	e.dirty = true
 	e.buf[e.line-1] = e.buf[e.line-1][e.column-1:]
 	e.renderLine(e.line)
 	e.cursorLineStart()
 }
 
-func (e *editor) deleteToLineEnd() {
+func (e *Editor) deleteToLineEnd() {
 	e.dirty = true
 	e.buf[e.line-1] = e.buf[e.line-1][:e.column-1]
 	e.renderLine(e.line)
 }
 
-func (e *editor) cursorEnter() {
+func (e *Editor) cursorEnter() {
 	e.dirty = true
 	// cut current line
 	text := e.buf[e.line-1]
@@ -507,7 +508,7 @@ func (e *editor) cursorEnter() {
 
 // A newline is appended if the last character of buffer is not
 // already a newline
-func (e *editor) WriteTo(w io.Writer) (int64, error) {
+func (e *Editor) WriteTo(w io.Writer) (int64, error) {
 	if len(e.buf[len(e.buf)-1]) != 0 {
 		// file ends with a new line
 		e.buf = append(e.buf, []rune{})
@@ -528,7 +529,7 @@ func (e *editor) WriteTo(w io.Writer) (int64, error) {
 	return int64(n), nil
 }
 
-func (e *editor) Find(s string) {
+func (e *Editor) Find(s string) {
 	if len(s) == 0 {
 		return
 	}
@@ -584,7 +585,7 @@ func (e *editor) Find(s string) {
 	}
 }
 
-func (e *editor) FindNext() {
+func (e *Editor) FindNext() {
 	if len(e.findMatch) == 0 {
 		return
 	}
@@ -607,7 +608,7 @@ func (e *editor) FindNext() {
 	e.Draw()
 }
 
-func (e *editor) FindPrev() {
+func (e *Editor) FindPrev() {
 	if len(e.findMatch) == 0 {
 		return
 	}
@@ -630,7 +631,7 @@ func (e *editor) FindPrev() {
 	e.Draw()
 }
 
-func (e *editor) HandleKey(ev *tcell.EventKey) {
+func (e *Editor) HandleKey(ev *tcell.EventKey) {
 	defer e.showCursor()
 	switch ev.Key() {
 	case tcell.KeyPgUp:
@@ -734,7 +735,7 @@ func (e *editor) HandleKey(ev *tcell.EventKey) {
 	}
 }
 
-func (e *editor) loadSuggestion() bool {
+func (e *Editor) loadSuggestion() bool {
 	word := string(lastToken(e.buf[e.line-1], e.column-2))
 	if len(word) == 0 {
 		return false
@@ -759,7 +760,7 @@ func (e *editor) loadSuggestion() bool {
 	return true
 }
 
-func (e *editor) showSuggestion() {
+func (e *Editor) showSuggestion() {
 	if len(e.suggest.options) == 0 {
 		return
 	}
@@ -790,7 +791,7 @@ func (e *editor) showSuggestion() {
 	}
 }
 
-func (e *editor) accecptSuggestion() {
+func (e *Editor) accecptSuggestion() {
 	word := string(lastToken(e.buf[e.line-1], e.column-2))
 	e.buf[e.line-1] = e.buf[e.line-1][:e.column-1-len(word)]
 	e.cursorColAdd(-len(word))
@@ -799,12 +800,12 @@ func (e *editor) accecptSuggestion() {
 	e.Draw() // TODO: no need to refresh the whole screen
 }
 
-func (e *editor) ClearFind() {
+func (e *Editor) ClearFind() {
 	e.findKey = ""
 	e.findMatch = nil
 }
 
-func (e *editor) SetPos(x, y, width, height int) {
+func (e *Editor) SetPos(x, y, width, height int) {
 	e.titleBar.SetPos(x, y, width, 1)
 	e.x = x
 	e.y = y
@@ -812,7 +813,7 @@ func (e *editor) SetPos(x, y, width, height int) {
 	e.height = height
 }
 
-func (e *editor) Load(filename string) {
+func (e *Editor) Load(filename string) {
 	if filename == "" {
 		return
 	}
@@ -858,7 +859,7 @@ func (e *editor) Load(filename string) {
 	e.status.Set(fmt.Sprintf("line %d, column %d", e.line, e.Column()))
 }
 
-func (e *editor) CloseBuffer() {
+func (e *Editor) CloseBuffer() {
 	if len(e.titleBar.names) == 0 {
 		return
 	}

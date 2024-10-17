@@ -10,101 +10,8 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-type App struct {
-	body *vstack
-
-	editors   *hstack
-	statusBar *statusBar
-	findBar   *findBar
-	saveBar   *saveBar
-	gotoBar   *gotoBar
-
-	focus  View
-	editor *editor // current or last focused editor
-	done   chan struct{}
-	mouseX int
-	mouseY int
-}
-
-func (a *App) Focus(v View) {
-	if a.focus == v {
-		return
-	}
-
-	if a.focus != nil {
-		a.focus.OnBlur()
-	}
-	a.focus = v
-	v.OnFocus()
-	if e, ok := v.(*editor); ok {
-		a.editor = e
-	}
-}
-
-func (a *App) getHover() View {
-	return getHover(a.body, a.mouseX, a.mouseY)
-}
-
-func getHover(view View, x, y int) View {
-	if !inView(view, x, y) {
-		return nil
-	}
-
-	if s, ok := view.(*vstack); ok {
-		for _, v := range s.Views {
-			hover := getHover(v, x, y)
-			if hover != nil {
-				return hover
-			}
-		}
-	}
-	if s, ok := view.(*hstack); ok {
-		for _, v := range s.Views {
-			hover := getHover(v, x, y)
-			if hover != nil {
-				return hover
-			}
-		}
-	}
-	return view
-}
-
-func (a *App) splitEditor(name string) {
-	e := newEditor(name, a.statusBar.Status)
-	a.editors.Views = append(a.editors.Views, e)
-	a.Focus(e)
-}
-
-func (a *App) closeEditor() {
-	a.editor.CloseBuffer()
-	if len(a.editor.titleBar.names) > 0 {
-		return
-	}
-
-	if len(a.editors.Views) == 1 {
-		close(a.done)
-		return
-	}
-
-	// delete editor
-	var i int
-	for i = range a.editors.Views {
-		if a.editors.Views[i] == a.editor {
-			break
-		}
-	}
-	a.editors.Views = slices.Delete(a.editors.Views, i, i+1)
-	j := i - 1
-	if j < 0 {
-		j = 0
-	}
-	prevE := a.editors.Views[j].(*editor)
-	a.Focus(prevE)
-}
-
-func (a *App) Draw() {
-	a.body.Draw()
-}
+// recent focused editor
+var recentE *Editor
 
 var screen tcell.Screen
 
@@ -142,21 +49,21 @@ func main() {
 		filename = os.Args[1]
 	}
 
-	app := &App{
-		done: make(chan struct{}),
-	}
-	app.statusBar = newStatusBar(app)
-	app.editor = newEditor(filename, app.statusBar.Status)
-	app.editors = HStack(app.editor)
-	app.body = VStack(app.editors, app.statusBar)
+	statusBar := newStatusBar()
+	recentE = newEditor(filename, statusBar.Status)
+	editors := HStack(recentE)
+	body := VStack(editors, statusBar)
 	width, height := screen.Size()
-	app.body.SetPos(0, 0, width, height)
+	body.SetPos(0, 0, width, height)
+
+	app := NewApp()
+	app.SetBody(body)
 
 	fb := new(findBar)
 	fb.SetPos(width-40, 1, 40, 1)
 	fb.Handle(tcell.KeyRune, func(k *tcell.EventKey) {
 		fb.keyword = append(fb.keyword, k.Rune())
-		app.editor.Find(string(fb.keyword))
+		recentE.Find(string(fb.keyword))
 		fb.Draw()
 	})
 	fb.Handle(tcell.KeyBackspace, func(*tcell.EventKey) {
@@ -165,10 +72,10 @@ func main() {
 		}
 		fb.keyword = fb.keyword[:len(fb.keyword)-1]
 		if len(fb.keyword) == 0 {
-			app.editor.ClearFind()
-			app.editor.Draw()
+			recentE.ClearFind()
+			recentE.Draw()
 		} else {
-			app.editor.Find(string(fb.keyword))
+			recentE.Find(string(fb.keyword))
 		}
 		fb.Draw()
 	})
@@ -178,28 +85,27 @@ func main() {
 		}
 		fb.keyword = fb.keyword[:len(fb.keyword)-1]
 		if len(fb.keyword) == 0 {
-			app.editor.ClearFind()
-			app.editor.Draw()
+			recentE.ClearFind()
+			recentE.Draw()
 		} else {
-			app.editor.Find(string(fb.keyword))
+			recentE.Find(string(fb.keyword))
 		}
 		fb.Draw()
 	})
 	fb.Handle(tcell.KeyEnter, func(*tcell.EventKey) {
-		app.editor.FindNext()
+		recentE.FindNext()
 	})
 	fb.Handle(tcell.KeyDown, func(*tcell.EventKey) {
-		app.editor.FindNext()
+		recentE.FindNext()
 	})
 	fb.Handle(tcell.KeyUp, func(*tcell.EventKey) {
-		app.editor.FindPrev()
+		recentE.FindPrev()
 	})
 	fb.Handle(tcell.KeyESC, func(*tcell.EventKey) {
 		fb.keyword = nil
-		app.Focus(app.editor)
-		app.editor.Draw() // cover the findbar
+		app.Focus(recentE)
+		recentE.Draw() // cover the findbar
 	})
-	app.findBar = fb
 
 	sb := new(saveBar)
 	sb.SetPos((width-40)/2, (height-3)/2, 40, 3) // align center
@@ -225,32 +131,31 @@ func main() {
 			return
 		}
 		defer f.Close()
-		_, err = app.editor.WriteTo(f)
+		_, err = recentE.WriteTo(f)
 		if err != nil {
 			log.Print(err)
 			return
 		}
 
-		app.editor.Load(string(sb.name))
-		app.Focus(app.editor)
-		app.editor.Draw()
+		recentE.Load(string(sb.name))
+		app.Focus(recentE)
+		recentE.Draw()
 	})
 	sb.Handle(tcell.KeyESC, func(k *tcell.EventKey) {
 		sb.name = nil
-		app.Focus(app.editor)
-		app.editor.Draw() // cover the savebar
+		app.Focus(recentE)
+		recentE.Draw() // cover the savebar
 	})
-	app.saveBar = sb
 
 	gb := newGotoBar()
 	gb.Handle(tcell.KeyEsc, func(*tcell.EventKey) {
 		gb.keyword = nil
-		app.editor.Draw()
-		app.Focus(app.editor)
+		recentE.Draw()
+		app.Focus(recentE)
 	})
 	gb.Handle(tcell.KeyRune, func(k *tcell.EventKey) {
 		defer gb.Draw()
-		app.editor.Draw() // clear previous options
+		recentE.Draw() // clear previous options
 		gb.keyword = append(gb.keyword, k.Rune())
 		if gb.keyword[0] == ':' {
 			return
@@ -268,7 +173,7 @@ func main() {
 			return
 		}
 		defer gb.Draw()
-		app.editor.Draw() // clear previous options
+		recentE.Draw() // clear previous options
 		gb.keyword = gb.keyword[:len(gb.keyword)-1]
 		if len(gb.keyword) == 0 {
 			return
@@ -292,28 +197,28 @@ func main() {
 				log.Printf("goto: invalid line number: %s", err)
 				return
 			}
-			if line < 1 || line > len(app.editor.buf)+1 {
+			if line < 1 || line > len(recentE.buf)+1 {
 				log.Printf("goto: line number out of range")
 				return
 			}
-			app.editor.line = line
-			app.editor.column = 1
-			if line <= app.editor.PageSize()/2 {
-				app.editor.startLine = 1
+			recentE.line = line
+			recentE.column = 1
+			if line <= recentE.PageSize()/2 {
+				recentE.startLine = 1
 			} else {
-				app.editor.startLine = line - app.editor.PageSize()/2
+				recentE.startLine = line - recentE.PageSize()/2
 			}
-			app.editor.Draw()
-			app.Focus(app.editor)
+			recentE.Draw()
+			app.Focus(recentE)
 			gb.index = 0
 			gb.keyword = nil
 			return
 		}
 		// go to file
 		if len(gb.options) > 0 {
-			app.editor.Load(gb.options[gb.index])
-			app.editor.Draw()
-			app.Focus(app.editor)
+			recentE.Load(gb.options[gb.index])
+			recentE.Draw()
+			app.Focus(recentE)
 			gb.keyword = nil
 			gb.index = 0
 		}
@@ -333,110 +238,83 @@ func main() {
 		gb.Draw()
 	})
 	gb.Handle(tcell.KeyCtrlBackslash, func(*tcell.EventKey) {
-		app.splitEditor(gb.options[gb.index])
-		app.Draw()
+		e := newEditor(gb.options[gb.index], statusBar.Status)
+		editors.Views = append(editors.Views, e)
+		app.Focus(e)
+		app.Redraw()
 	})
-	app.gotoBar = gb
 
-	app.Draw()
-	app.Focus(app.editor)
-	screen.Show()
-
-	for {
-		select {
-		case <-app.done:
+	app.Handle(tcell.KeyCtrlQ, func(*tcell.EventKey) {
+		// force quit
+		app.Close()
+	})
+	app.Handle(tcell.KeyCtrlF, func(*tcell.EventKey) {
+		app.Focus(fb)
+		fb.Draw()
+	})
+	app.Handle(tcell.KeyCtrlS, func(*tcell.EventKey) {
+		if !recentE.dirty {
 			return
-		default:
 		}
-
-		ev := screen.PollEvent()
-		switch ev := ev.(type) {
-		case *tcell.EventResize:
-			width, height := screen.Size()
-			app.body.SetPos(0, 0, width, height)
-			app.Draw()
-			screen.Sync()
-			continue
-		case *tcell.EventMouse:
-			x, y := ev.Position()
-			switch ev.Buttons() {
-			case tcell.Button1:
-				view := app.getHover()
-				app.Focus(view)
-				view.OnClick(x, y)
-			case tcell.WheelUp:
-				view := app.getHover()
-				if e, ok := view.(*editor); ok {
-					delta := int(float32(y) * scrollSensitivity)
-					e.ScrollUp(delta)
-				}
-			case tcell.WheelDown:
-				view := app.getHover()
-				if e, ok := view.(*editor); ok {
-					delta := int(float32(y) * scrollSensitivity)
-					e.ScrollDown(delta)
-				}
-			default:
-				app.mouseX = x
-				app.mouseY = y
-				// do not render on mouse motion
-				continue
-			}
-		case *tcell.EventKey:
-			if ev.Key() == tcell.KeyCtrlQ {
-				// force exit, discard any changes
+		if recentE.filename == "" {
+			app.Focus(sb)
+			sb.Draw()
+		} else {
+			f, err := os.Create(recentE.filename)
+			if err != nil {
+				log.Print(err)
 				return
 			}
-			if ev.Key() == tcell.KeyCtrlF {
-				app.Focus(app.findBar)
-				app.findBar.Draw()
-				break
+			_, err = recentE.WriteTo(f)
+			f.Close()
+			if err != nil {
+				log.Print(err)
+				return
 			}
-			if ev.Key() == tcell.KeyCtrlS {
-				if !app.editor.dirty {
-					break
-				}
-				if app.editor.filename == "" {
-					app.Focus(app.saveBar)
-					app.saveBar.Draw()
-				} else {
-					f, err := os.Create(app.editor.filename)
-					if err != nil {
-						log.Print(err)
-						break
-					}
-					_, err = app.editor.WriteTo(f)
-					f.Close()
-					if err != nil {
-						log.Print(err)
-						break
-					}
-				}
-				break
-			}
-			if ev.Key() == tcell.KeyCtrlP {
-				app.gotoBar.Draw()
-				app.Focus(app.gotoBar)
-				break
-			}
-			if ev.Key() == tcell.KeyCtrlG {
-				app.gotoBar.keyword = []rune{':'}
-				app.gotoBar.Draw()
-				app.Focus(app.gotoBar)
-				break
-			}
-			if ev.Key() == tcell.KeyCtrlW {
-				if app.editor.dirty {
-					app.Focus(app.saveBar)
-					app.saveBar.Draw()
-				} else {
-					app.closeEditor()
-					app.Draw()
-				}
-				break
-			}
-			app.focus.HandleKey(ev)
 		}
-		screen.Show()
-	}
+	})
+	app.Handle(tcell.KeyCtrlP, func(*tcell.EventKey) {
+		gb.Draw()
+		app.Focus(gb)
+	})
+	app.Handle(tcell.KeyCtrlG, func(*tcell.EventKey) {
+		gb.keyword = []rune{':'}
+		gb.Draw()
+		app.Focus(gb)
+	})
+	app.Handle(tcell.KeyCtrlW, func(*tcell.EventKey) {
+		if recentE.dirty {
+			app.Focus(sb)
+			sb.Draw()
+			return
+		}
+
+		recentE.CloseBuffer()
+		if len(recentE.titleBar.names) > 0 {
+			return
+		}
+
+		if len(editors.Views) == 1 {
+			app.Close()
+			return
+		}
+
+		// delete editor
+		var i int
+		for i = range editors.Views {
+			if editors.Views[i] == recentE {
+				break
+			}
+		}
+		editors.Views = slices.Delete(editors.Views, i, i+1)
+		j := i - 1
+		if j < 0 {
+			j = 0
+		}
+		prevE := editors.Views[j].(*Editor)
+		app.Focus(prevE)
+		app.Redraw()
+	})
+	app.Focus(recentE)
+	app.Run()
 }

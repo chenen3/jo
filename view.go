@@ -15,6 +15,8 @@ type View interface {
 	OnFocus()
 	OnBlur()
 	OnClick(x, y int)
+	ScrollUp(delta int)
+	ScrollDown(delta int)
 }
 
 type baseView struct {
@@ -39,7 +41,9 @@ func (v *baseView) OnBlur()                   { v.focused = false }
 func (v *baseView) Focused() bool             { return v.focused }
 
 // TODO: focus
-func (v *baseView) OnClick(int, int) {}
+func (v *baseView) OnClick(int, int)     {}
+func (v *baseView) ScrollUp(delta int)   {}
+func (v *baseView) ScrollDown(delta int) {}
 
 // Handle register callback function for the given key,
 // it is intended to be used for interaction between multiple views.

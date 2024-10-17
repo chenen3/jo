@@ -6,12 +6,12 @@ import (
 
 type titleBar struct {
 	baseView
-	e     *editor
+	e     *Editor
 	names []string
 	index int // indicate current name
 }
 
-func newTitleBar(e *editor, name string) *titleBar {
+func newTitleBar(e *Editor, name string) *titleBar {
 	t := &titleBar{e: e}
 	t.height = 1
 	if name != "" {
@@ -40,7 +40,7 @@ func (t *titleBar) OnClick(x, y int) {
 	}
 }
 
-// close current editor
+// Close current name
 func (t *titleBar) Close() {
 	if len(t.names) == 0 {
 		return
