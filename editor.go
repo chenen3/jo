@@ -37,6 +37,7 @@ type Editor struct {
 	lastPos map[string][3]int // filename: [startline, line, column]
 
 	suggest *struct {
+		x, y    int
 		options []string
 		i       int
 		up      bool
@@ -48,24 +49,18 @@ type Editor struct {
 }
 
 func (e *Editor) Click(x, y int) {
-	// if inView(e.titleBar, x, y) {
-	// 	e.titleBar.OnClick(x, y)
-	// 	return
-	// }
+	if inView(e.titleBar, x, y) {
+		e.titleBar.Click(x, y)
+		return
+	}
 
-	// if e.suggest != nil {
-	// 	e.suggest = nil
-	// 	e.Draw()
-	// }
-	// e.setCursor(x, y)
-	// e.OnFocus()
 	e.BaseView.Click(x, y)
 	e.setCursor(x, y)
 }
 
-func (e *Editor) OnFocus(f func(cursorX, cursorY int)) {
-	e.BaseView.OnFocus(f)
+func (e *Editor) Focus() (int, int) {
 	recentE = e
+	return e.BaseView.Focus()
 }
 
 var tokenTree = new(node)
@@ -210,6 +205,11 @@ func (e *Editor) Draw(screen tcell.Screen) {
 	e.bx2 = e.x + e.width - 1
 	e.by2 = e.y + e.height - 1
 
+	e.updateCursorPos()
+	if e.focused {
+		screen.ShowCursor(e.cursorX, e.cursorY)
+	}
+
 	e.lineBar.startLine = e.startLine
 	endLine := e.startLine + e.PageSize() - 1
 	if endLine > len(e.buf) {
@@ -248,13 +248,17 @@ func (e *Editor) cursorLineAdd(delta int) {
 	if e.column > len(e.buf[e.line-1])+1 {
 		e.column = len(e.buf[e.line-1]) + 1
 	}
+	e.updateCursorPos()
+}
+
+func (e *Editor) updateCursorPos() {
 	e.status.Set(fmt.Sprintf("line %d, column %d", e.line, e.Column()))
+	e.cursorX = e.bx1 + e.Column() - 1
+	e.cursorY = e.by1 + e.line - e.startLine
 }
 
 func (e *Editor) cursorColAdd(delta int) {
-	defer func() {
-		e.status.Set(fmt.Sprintf("line %d, column %d", e.line, e.Column()))
-	}()
+	defer e.updateCursorPos()
 
 	col := e.column + delta
 	if 1 <= col && col <= len(e.buf[e.line-1])+1 {
@@ -310,64 +314,44 @@ func (e *Editor) setCursor(x, y int) {
 		col = len(e.buf[line-1]) + 1
 	}
 	e.line, e.column = line, col
-	e.status.Set(fmt.Sprintf("line %d, column %d", e.line, col))
-
-	if e.column <= tabs {
-		e.cursorX = e.bx1 + (e.column-1)*tabWidth
-	} else {
-		padding := tabs * (tabWidth - 1)
-		e.cursorX = e.bx1 + e.column + padding - 1
-	}
-	e.cursorY = e.by1 + e.line - e.startLine
+	e.updateCursorPos()
 }
 
-// func (e *Editor) showCursor() {
-// 	if !e.Focused() {
-// 		return
-// 	}
+func (e *Editor) cursorUp() (redraw bool) {
+	if e.line == 1 {
+		return false
+	}
 
-// 	tabs := leadingTabs(e.buf[e.line-1])
-// 	var x int
-// 	if e.column <= tabs {
-// 		x = e.bx1 + (e.column-1)*tabWidth
-// 	} else {
-// 		padding := tabs * (tabWidth - 1)
-// 		x = e.bx1 + e.column + padding - 1
-// 	}
-// 	y := e.by1 + e.line - e.startLine
-// }
+	defer e.updateCursorPos()
+	if e.line == e.startLine {
+		e.startLine--
+		e.cursorLineAdd(-1)
+		return true
+	}
+	e.cursorLineAdd(-1)
+	return false
+}
 
-// func (e *Editor) cursorUp() {
-// 	if e.line == 1 {
-// 		return
-// 	}
-// 	if e.line == e.startLine {
-// 		e.startLine--
-// 		e.cursorLineAdd(-1)
-// 		e.Draw()
-// 		return
-// 	}
-// 	e.cursorLineAdd(-1)
-// }
+func (e *Editor) cursorDown() (redraw bool) {
+	if e.line == len(e.buf) {
+		// end of file
+		return false
+	}
 
-// func (e *Editor) cursorDown() {
-// 	if e.line == len(e.buf) {
-// 		// end of file
-// 		return
-// 	}
+	defer e.updateCursorPos()
+	if e.line < e.startLine+e.PageSize()-1 {
+		e.cursorLineAdd(1)
+		return false
+	}
 
-// 	if e.line < e.startLine+e.PageSize()-1 {
-// 		e.cursorLineAdd(1)
-// 		return
-// 	}
-
-// 	e.startLine++
-// 	e.cursorLineAdd(1)
-// 	e.Draw()
-// }
+	e.startLine++
+	e.cursorLineAdd(1)
+	return true
+}
 
 // go to the first non-whitespace character in line
 func (e *Editor) cursorLineStart() {
+	defer e.updateCursorPos()
 	for i, c := range e.buf[e.line-1] {
 		if c != ' ' && c != '\t' {
 			e.column = i + 1
@@ -384,7 +368,7 @@ func (e *Editor) cursorLineEnd() {
 	e.cursorColAdd(len(e.buf[e.line-1]) - e.column + 1)
 }
 
-func (e *Editor) ScrollUp(delta int) bool {
+func (e *Editor) ScrollUp(delta int) (ok bool) {
 	if e.startLine == 1 {
 		return false
 	}
@@ -396,7 +380,7 @@ func (e *Editor) ScrollUp(delta int) bool {
 	return true
 }
 
-func (e *Editor) ScrollDown(delta int) bool {
+func (e *Editor) ScrollDown(delta int) (ok bool) {
 	if e.startLine >= len(e.buf)-e.PageSize()+1 {
 		return false
 	}
@@ -407,27 +391,26 @@ func (e *Editor) ScrollDown(delta int) bool {
 	return true
 }
 
-// func (e *Editor) writeRune(r rune) {
-// 	text := e.buf[e.line-1]
-// 	rs := make([]rune, len(text[e.column-1:]))
-// 	copy(rs, text[e.column-1:])
-// 	text = append(append(text[:e.column-1], r), rs...)
-// 	e.buf[e.line-1] = text
-// 	e.renderLine(e.line)
-// 	e.cursorColAdd(1)
-// 	e.dirty = true
-// }
+func (e *Editor) writeRune(r rune) {
+	text := e.buf[e.line-1]
+	rs := make([]rune, len(text[e.column-1:]))
+	copy(rs, text[e.column-1:])
+	text = append(append(text[:e.column-1], r), rs...)
+	e.buf[e.line-1] = text
+	// e.renderLine(e.line)
+	e.cursorColAdd(1)
+	e.dirty = true
+}
 
-// func (e *Editor) writeString(s string) {
-// 	text := e.buf[e.line-1]
-// 	rs := make([]rune, len(text[e.column-1:]))
-// 	copy(rs, text[e.column-1:])
-// 	text = append(append(text[:e.column-1], []rune(s)...), rs...)
-// 	e.buf[e.line-1] = text
-// 	e.renderLine(e.line)
-// 	e.cursorColAdd(len(s))
-// 	e.dirty = true
-// }
+func (e *Editor) writeString(s string) {
+	text := e.buf[e.line-1]
+	rs := make([]rune, len(text[e.column-1:]))
+	copy(rs, text[e.column-1:])
+	text = append(append(text[:e.column-1], []rune(s)...), rs...)
+	e.buf[e.line-1] = text
+	e.cursorColAdd(len(s))
+	e.dirty = true
+}
 
 // Line return current line number in editor
 func (e *Editor) Line() int {
@@ -449,66 +432,64 @@ func (e *Editor) Column() int {
 	return col
 }
 
-// func (e *Editor) deleteLeft() {
-// 	e.dirty = true
-// 	// cursor at line start, merge the line to previous one
-// 	if e.column == 1 {
-// 		if e.line == 1 {
-// 			return
-// 		}
-// 		prevLine := e.buf[e.line-2]
-// 		e.buf[e.line-2] = append(prevLine, e.buf[e.line-1]...)
-// 		e.buf = append(e.buf[:e.line-1], e.buf[e.line:]...)
-// 		e.cursorLineAdd(-1)
-// 		e.cursorColAdd(1 + len(prevLine) - e.column)
-// 		e.Draw()
-// 		return
-// 	}
+// If the returned redraw is true, caller should redraw editor,
+// otherwise render the current line.
+func (e *Editor) deleteLeft() (redraw bool) {
+	e.dirty = true
+	// cursor at line start, merge the line to previous one
+	if e.column == 1 {
+		if e.line == 1 {
+			return
+		}
+		prevLine := e.buf[e.line-2]
+		e.buf[e.line-2] = append(prevLine, e.buf[e.line-1]...)
+		e.buf = append(e.buf[:e.line-1], e.buf[e.line:]...)
+		e.cursorLineAdd(-1)
+		e.cursorColAdd(1 + len(prevLine) - e.column)
+		return true
+	}
 
-// 	text := e.buf[e.line-1]
-// 	if e.column-1 == len(text) {
-// 		// line end
-// 		text = text[:e.column-2]
-// 	} else {
-// 		// TODO: maybe slices.Delete ?
-// 		text = append(text[:e.column-2], text[e.column-1:]...)
-// 	}
-// 	e.buf[e.line-1] = text
-// 	e.renderLine(e.line)
-// 	e.cursorColAdd(-1)
-// }
+	text := e.buf[e.line-1]
+	if e.column-1 == len(text) {
+		// line end
+		text = text[:e.column-2]
+	} else {
+		// TODO: maybe slices.Delete ?
+		text = append(text[:e.column-2], text[e.column-1:]...)
+	}
+	e.buf[e.line-1] = text
+	e.cursorColAdd(-1)
+	return false
+}
 
-// func (e *Editor) deleteToLineStart() {
-// 	e.dirty = true
-// 	e.buf[e.line-1] = e.buf[e.line-1][e.column-1:]
-// 	e.renderLine(e.line)
-// 	e.cursorLineStart()
-// }
+func (e *Editor) deleteToLineStart() {
+	e.dirty = true
+	e.buf[e.line-1] = e.buf[e.line-1][e.column-1:]
+	e.cursorLineStart()
+}
 
-// func (e *Editor) deleteToLineEnd() {
-// 	e.dirty = true
-// 	e.buf[e.line-1] = e.buf[e.line-1][:e.column-1]
-// 	e.renderLine(e.line)
-// }
+func (e *Editor) deleteToLineEnd() {
+	e.dirty = true
+	e.buf[e.line-1] = e.buf[e.line-1][:e.column-1]
+}
 
-// func (e *Editor) cursorEnter() {
-// 	e.dirty = true
-// 	// cut current line
-// 	text := e.buf[e.line-1]
-// 	newText := make([]rune, len(text[e.column-1:]))
-// 	copy(newText, text[e.column-1:])
-// 	e.buf[e.line-1] = text[:e.column-1]
-// 	// TODO: not efficient
-// 	buf := make([][]rune, len(e.buf[e.line:]))
-// 	for i, rs := range e.buf[e.line:] {
-// 		buf[i] = make([]rune, len(rs))
-// 		copy(buf[i], rs)
-// 	}
-// 	e.buf = append(append(e.buf[:e.line], newText), buf...)
-// 	e.cursorLineAdd(1)
-// 	e.cursorLineStart()
-// 	e.Draw()
-// }
+func (e *Editor) cursorEnter() {
+	e.dirty = true
+	// cut current line
+	text := e.buf[e.line-1]
+	newText := make([]rune, len(text[e.column-1:]))
+	copy(newText, text[e.column-1:])
+	e.buf[e.line-1] = text[:e.column-1]
+	// TODO: not efficient
+	buf := make([][]rune, len(e.buf[e.line:]))
+	for i, rs := range e.buf[e.line:] {
+		buf[i] = make([]rune, len(rs))
+		copy(buf[i], rs)
+	}
+	e.buf = append(append(e.buf[:e.line], newText), buf...)
+	e.cursorLineAdd(1)
+	e.cursorLineStart()
+}
 
 // A newline is appended if the last character of buffer is not
 // already a newline
@@ -633,119 +614,148 @@ func (e *Editor) FindPrev() {
 	e.column = j + len(e.findKey) + 1
 }
 
-/*
-	func (e *Editor) HandleKey(ev *tcell.EventKey) {
-		defer e.showCursor()
-		switch ev.Key() {
-		case tcell.KeyPgUp:
-			e.ScrollUp(e.PageSize() - 1)
-			e.cursorLineAdd(-(e.PageSize() - 1))
-		case tcell.KeyPgDn:
-			e.ScrollDown(e.PageSize() - 1)
-			e.cursorLineAdd(e.PageSize() - 1)
-		case tcell.KeyHome:
-			e.cursorLineStart()
-		case tcell.KeyEnd:
-			e.cursorLineEnd()
-		case tcell.KeyUp:
-			if e.suggest == nil {
-				e.cursorUp()
-				return
+func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
+	defer func() {
+		if e.focused {
+			screen.ShowCursor(e.cursorX, e.cursorY)
+		}
+	}()
+	switch ev.Key() {
+	case tcell.KeyPgUp:
+		if e.ScrollUp(e.PageSize() - 1) {
+			e.Draw(screen)
+		}
+		e.cursorLineAdd(-(e.PageSize() - 1))
+	case tcell.KeyPgDn:
+		if e.ScrollDown(e.PageSize() - 1) {
+			e.Draw(screen)
+		}
+		e.cursorLineAdd(e.PageSize() - 1)
+	case tcell.KeyHome:
+		e.cursorLineStart()
+	case tcell.KeyEnd:
+		e.cursorLineEnd()
+	case tcell.KeyUp:
+		if e.suggest == nil {
+			if e.cursorUp() {
+				e.Draw(screen)
 			}
+			return
+		}
 
-			if e.suggest.up {
-				e.suggest.i++
-			} else {
-				e.suggest.i--
-			}
+		if e.suggest.up {
+			e.suggest.i++
+		} else {
+			e.suggest.i--
+		}
 
-			if e.suggest.i == -1 {
-				e.suggest.i = len(e.suggest.options) - 1
-			} else if e.suggest.i == len(e.suggest.options) {
-				e.suggest.i = 0
+		if e.suggest.i == -1 {
+			e.suggest.i = len(e.suggest.options) - 1
+		} else if e.suggest.i == len(e.suggest.options) {
+			e.suggest.i = 0
+		}
+		e.showSuggestion(screen)
+	case tcell.KeyDown:
+		if e.suggest == nil {
+			if e.cursorDown() {
+				e.Draw(screen)
 			}
-			e.showSuggestion()
-		case tcell.KeyDown:
-			if e.suggest == nil {
-				e.cursorDown()
-				return
-			}
+			return
+		}
 
-			if !e.suggest.up {
-				e.suggest.i++
-			} else {
-				e.suggest.i--
-			}
-			if e.suggest.i == -1 {
-				e.suggest.i = len(e.suggest.options) - 1
-			} else if e.suggest.i == len(e.suggest.options) {
-				e.suggest.i = 0
-			}
-			e.showSuggestion()
-		case tcell.KeyLeft:
-			e.cursorColAdd(-1)
-		case tcell.KeyRight:
-			e.cursorColAdd(1)
-		case tcell.KeyRune:
-			e.writeRune(ev.Rune())
-			// refresh suggestions on input
-			if e.suggest != nil && e.loadSuggestion() {
-				e.Draw() // clear previous suggestions
-				e.showSuggestion()
-			}
-		case tcell.KeyTab:
-			if e.column == 1 {
-				e.writeRune('\t')
-				return
-			}
-
-			// on second <tab>, accept the first suggestion
-			if e.suggest != nil {
-				e.accecptSuggestion()
-				return
-			}
-
-			// on first <tab>, show suggestions
+		if !e.suggest.up {
+			e.suggest.i++
+		} else {
+			e.suggest.i--
+		}
+		if e.suggest.i == -1 {
+			e.suggest.i = len(e.suggest.options) - 1
+		} else if e.suggest.i == len(e.suggest.options) {
+			e.suggest.i = 0
+		}
+		e.showSuggestion(screen)
+	case tcell.KeyLeft:
+		e.cursorColAdd(-1)
+	case tcell.KeyRight:
+		e.cursorColAdd(1)
+	case tcell.KeyRune:
+		e.writeRune(ev.Rune())
+		e.renderLine(screen, e.line)
+		if e.suggest != nil {
+			e.Draw(screen) // clear previous suggestions
 			if e.loadSuggestion() {
-				if len(e.suggest.options) == 1 {
-					e.accecptSuggestion()
-				} else {
-					e.showSuggestion()
-				}
-			}
-		case tcell.KeyEnter:
-			if e.suggest != nil {
-				e.accecptSuggestion()
-				return
-			}
-			e.cursorEnter()
-		case tcell.KeyBackspace, tcell.KeyBackspace2:
-			e.deleteLeft()
-			if e.suggest != nil && e.loadSuggestion() {
-				e.Draw() // clear previous suggestions
-				e.showSuggestion()
-			}
-		case tcell.KeyCtrlU:
-			e.deleteToLineStart()
-		case tcell.KeyCtrlK:
-			e.deleteToLineEnd()
-		case tcell.KeyESC:
-			if e.suggest != nil {
-				e.suggest = nil
-				e.Draw()
-				return
+				e.showSuggestion(screen)
 			}
 		}
+	case tcell.KeyTab:
+		if e.column == 1 { // TODO
+			e.writeRune('\t')
+			e.renderLine(screen, e.line)
+			return
+		}
+
+		// on second <tab>, accept the first suggestion
+		if e.suggest != nil {
+			e.accecptSuggestion()
+			e.Draw(screen)
+			return
+		}
+
+		// on first <tab>, show suggestions
+		if e.loadSuggestion() {
+			if len(e.suggest.options) == 1 {
+				e.accecptSuggestion()
+				e.renderLine(screen, e.line)
+			} else {
+				e.showSuggestion(screen)
+			}
+		}
+	case tcell.KeyEnter:
+		if e.suggest != nil {
+			e.accecptSuggestion()
+			e.Draw(screen)
+			return
+		}
+		e.cursorEnter()
+		e.Draw(screen)
+	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		if e.deleteLeft() {
+			e.Draw(screen)
+			return
+		}
+
+		e.renderLine(screen, e.line)
+		if e.suggest != nil {
+			e.Draw(screen) // clear previous suggestions
+			if e.loadSuggestion() {
+				e.showSuggestion(screen)
+			}
+		}
+	case tcell.KeyCtrlU:
+		e.deleteToLineStart()
+		e.renderLine(screen, e.line)
+	case tcell.KeyCtrlK:
+		e.deleteToLineEnd()
+		e.renderLine(screen, e.line)
+	case tcell.KeyESC:
+		if e.suggest != nil {
+			e.suggest = nil
+			e.Draw(screen)
+			return
+		}
 	}
-*/
+}
+
 func (e *Editor) loadSuggestion() bool {
 	word := string(lastToken(e.buf[e.line-1], e.column-2))
 	if len(word) == 0 {
+		e.suggest = nil
 		return false
 	}
 
 	tokens := tokenTree.get(word)
 	if len(tokens) == 0 {
+		e.suggest = nil
 		return false
 	}
 
@@ -754,54 +764,56 @@ func (e *Editor) loadSuggestion() bool {
 		tokens = tokens[:10]
 	}
 	e.suggest = &struct {
+		x       int
+		y       int
 		options []string
 		i       int
 		up      bool
 	}{
+		x:       e.cursorX - len(word),
+		y:       e.cursorY,
 		options: tokens,
 	}
 	return true
 }
 
-// func (e *Editor) showSuggestion() {
-// 	if len(e.suggest.options) == 0 {
-// 		return
-// 	}
-// 	cursorX := e.bx1 + e.Column() - 1
-// 	optionY := func(i int) int {
-// 		cursorY := e.by1 + e.Line() - e.startLine
-// 		var yy int
-// 		if e.by2-cursorY >= len(e.suggest.options) {
-// 			yy = cursorY + 1 + i // list down
-// 		} else {
-// 			e.suggest.up = true
-// 			yy = cursorY - 1 - i // list up
-// 		}
-// 		return yy
-// 	}
-// 	// for i := range e.suggest.options {
-// 	// 	style := tcell.StyleDefault.Background(tcell.ColorLightGray).Foreground(tcell.ColorBlack)
-// 	// 	if i == e.suggest.i {
-// 	// 		style = style.Background(tcell.ColorLightBlue)
-// 	// 	}
-// 	// 	oy := optionY(i)
-// 	// 	for j, c := range e.suggest.options[i] {
-// 	// 		screen.SetContent(cursorX+j, oy, c, nil, style)
-// 	// 	}
-// 	// 	for padding := optionWidth - len(e.suggest.options[i]); padding > 0; padding-- {
-// 	// 		screen.SetContent(cursorX+optionWidth-padding, oy, ' ', nil, style)
-// 	// 	}
-// 	// }
-// }
+func (e *Editor) showSuggestion(screen tcell.Screen) {
+	if len(e.suggest.options) == 0 {
+		return
+	}
+	optionY := func(i int) int {
+		var yy int
+		if e.by2-e.suggest.y >= len(e.suggest.options) {
+			yy = e.suggest.y + 1 + i // list down
+		} else {
+			e.suggest.up = true
+			yy = e.suggest.y - 1 - i // list up
+		}
+		return yy
+	}
+	for i := range e.suggest.options {
+		style := tcell.StyleDefault.Background(tcell.ColorLightGray).Foreground(tcell.ColorBlack)
+		if i == e.suggest.i {
+			style = style.Background(tcell.ColorLightBlue)
+		}
+		oy := optionY(i)
+		for j, c := range e.suggest.options[i] {
+			screen.SetContent(e.suggest.x+j, oy, c, nil, style)
+		}
+		for padding := optionWidth - len(e.suggest.options[i]); padding > 0; padding-- {
+			screen.SetContent(e.suggest.x+optionWidth-padding, oy, ' ', nil, style)
+		}
+	}
+}
 
-// func (e *Editor) accecptSuggestion() {
-// 	word := string(lastToken(e.buf[e.line-1], e.column-2))
-// 	e.buf[e.line-1] = e.buf[e.line-1][:e.column-1-len(word)]
-// 	e.cursorColAdd(-len(word))
-// 	e.writeString(e.suggest.options[e.suggest.i])
-// 	e.suggest = nil
-// 	// e.Draw() // TODO: no need to refresh the whole screen
-// }
+func (e *Editor) accecptSuggestion() {
+	word := string(lastToken(e.buf[e.line-1], e.column-2))
+	e.buf[e.line-1] = e.buf[e.line-1][:e.column-1-len(word)]
+	e.cursorColAdd(-len(word))
+	e.writeString(e.suggest.options[e.suggest.i])
+	e.suggest = nil
+	// e.Draw() // TODO: no need to refresh the whole screen
+}
 
 func (e *Editor) ClearFind() {
 	e.findKey = ""

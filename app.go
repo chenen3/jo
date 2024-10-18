@@ -1,9 +1,7 @@
 // Framework stuff
 package main
 
-import (
-	"github.com/gdamore/tcell/v2"
-)
+import "github.com/gdamore/tcell/v2"
 
 type App struct {
 	body View
@@ -56,10 +54,12 @@ func (a *App) Close() {
 	a.screen.Fini()
 }
 
+// Focus focus on view and show cursor,
+// while blurs previous focused view, if any.
 func (a *App) Focus(v View) {
-	v.OnFocus(func(cursorX, cursorY int) {
-		a.screen.ShowCursor(cursorX, cursorY)
-	})
+	cursorX, cursorY := v.Focus()
+	a.screen.ShowCursor(cursorX, cursorY)
+
 	if a.focus == v {
 		return
 	}
@@ -149,7 +149,7 @@ func (a *App) Run() {
 			if f, ok := a.keymap[ev.Key()]; ok {
 				f(ev)
 			} else {
-				a.focus.HandleEventKey(ev)
+				a.focus.HandleEventKey(ev, a.screen)
 			}
 		}
 	}
@@ -163,9 +163,8 @@ type View interface {
 
 	// HandleEventKey is used to operate inside a view.
 	// When interacting with multiple views, use [baseView.Handle] instead.
-	HandleEventKey(*tcell.EventKey)
-	// OnFocus calls cb with the position of cursor
-	OnFocus(cb func(cursorX, cursorY int))
+	HandleEventKey(*tcell.EventKey, tcell.Screen)
+	Focus() (cursorX, cursorY int)
 	Blur()
 
 	Click(x, y int)
@@ -181,8 +180,8 @@ type BaseView struct {
 	focused   bool
 	cursorX   int
 	cursorY   int
-	keymap    map[tcell.Key]func(*tcell.EventKey)
-	onClick   func(int, int)
+	keymap    map[tcell.Key]func(*tcell.EventKey, tcell.Screen)
+	onClick   func()
 }
 
 func (v *BaseView) SetPos(x, y, width, height int) {
@@ -195,22 +194,22 @@ func (v *BaseView) SetPos(x, y, width, height int) {
 func (v *BaseView) Pos() (int, int, int, int) { return v.x, v.y, v.width, v.height }
 func (v *BaseView) FixedSize() bool           { return v.fixedSize }
 
-func (v *BaseView) OnFocus(f func(cursorX, cursorY int)) {
+func (v *BaseView) Focus() (int, int) {
 	v.focused = true
-	f(v.cursorX, v.cursorY)
+	return v.cursorX, v.cursorY
 }
 
 func (v *BaseView) Blur()         { v.focused = false }
 func (v *BaseView) Focused() bool { return v.focused }
 
 // OnClick register the callback function that will be call on click
-func (v *BaseView) OnClick(f func(x, y int)) {
+func (v *BaseView) OnClick(f func()) {
 	v.onClick = f
 }
 
 func (v *BaseView) Click(x, y int) {
 	if v.onClick != nil {
-		v.onClick(x, y)
+		v.onClick()
 	}
 }
 
@@ -219,9 +218,9 @@ func (v *BaseView) ScrollDown(delta int) bool { return false }
 
 // Handle register callback function for the given key,
 // it is intended to be used for interaction between multiple views.
-func (v *BaseView) Handle(k tcell.Key, f func(*tcell.EventKey)) {
+func (v *BaseView) Handle(k tcell.Key, f func(*tcell.EventKey, tcell.Screen)) {
 	if v.keymap == nil {
-		v.keymap = make(map[tcell.Key]func(*tcell.EventKey))
+		v.keymap = make(map[tcell.Key]func(*tcell.EventKey, tcell.Screen))
 	}
 	if _, ok := v.keymap[k]; ok {
 		panic("repeated key handler")
@@ -229,13 +228,13 @@ func (v *BaseView) Handle(k tcell.Key, f func(*tcell.EventKey)) {
 	v.keymap[k] = f
 }
 
-func (v *BaseView) HandleEventKey(k *tcell.EventKey) {
+func (v *BaseView) HandleEventKey(k *tcell.EventKey, screen tcell.Screen) {
 	if v.keymap == nil {
 		return
 	}
 	cb, ok := v.keymap[k.Key()]
 	if ok {
-		cb(k)
+		cb(k, screen)
 	}
 }
 
@@ -244,6 +243,7 @@ type vstack struct {
 	Views []View
 }
 
+// VStack arranges views vertically
 func VStack(v ...View) *vstack {
 	return &vstack{Views: v}
 }
@@ -302,6 +302,7 @@ type hstack struct {
 	Views []View
 }
 
+// HStack arranges views horizontally
 func HStack(v ...View) *hstack {
 	return &hstack{Views: v}
 }

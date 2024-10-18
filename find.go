@@ -1,8 +1,6 @@
 package main
 
 import (
-	"log"
-
 	"github.com/gdamore/tcell/v2"
 )
 
@@ -55,7 +53,6 @@ func (f *findBar) Draw(screen tcell.Screen) {
 	}
 
 	if f.Focused() {
-		log.Print("show cursor ", f.cursorX, f.cursorY)
 		screen.ShowCursor(f.cursorX, f.cursorY)
 	}
 }

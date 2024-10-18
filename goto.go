@@ -11,8 +11,6 @@ import (
 type gotoBar struct {
 	BaseView
 	keyword []rune
-	cursorX int
-	cursorY int
 	index   int
 	options []string
 }
