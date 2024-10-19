@@ -41,14 +41,7 @@ func main() {
 		statusBar.Draw(app.Screen())
 	})
 
-	e := newEditor(filename, statusBar.Status)
-	// TODO: kind of weird
-	e.titleBar.OnClick(func() {
-		name := e.titleBar.names[e.titleBar.index]
-		e.Load(name)
-		e.Draw(app.Screen())
-	})
-
+	e := createEditor(app.Screen(), filename, statusBar.Status)
 	recentE = e
 	editors := HStack(e)
 	app.SetBody(VStack(editors, statusBar))
@@ -240,13 +233,7 @@ func main() {
 		gb.Draw(screen)
 	})
 	gb.Handle(tcell.KeyCtrlBackslash, func(k *tcell.EventKey, screen tcell.Screen) {
-		ne := newEditor(gb.options[gb.index], statusBar.Status)
-		// TODO: kind of weird
-		ne.titleBar.OnClick(func() {
-			name := ne.titleBar.names[ne.titleBar.index]
-			ne.Load(name)
-			ne.Draw(app.Screen())
-		})
+		ne := createEditor(app.Screen(), gb.options[gb.index], statusBar.Status)
 		editors.Views = append(editors.Views, ne)
 		app.Focus(ne)
 		app.Redraw()
@@ -331,4 +318,20 @@ func main() {
 	})
 	app.Focus(e)
 	app.Run()
+}
+
+func createEditor(screen tcell.Screen, filename string, status *bindStr) *Editor {
+	e := newEditor(filename, status)
+	e.OnClick(func() {
+		if e.selection != nil {
+			e.Draw(screen)
+		}
+	})
+	// TODO: kind of weird
+	e.titleBar.OnClick(func() {
+		name := e.titleBar.names[e.titleBar.index]
+		e.Load(name)
+		e.Draw(screen)
+	})
+	return e
 }

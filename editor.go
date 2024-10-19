@@ -7,12 +7,15 @@ import (
 	"io"
 	"log"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 )
 
+// TODO: undo/redo changes, aka editing history
 type Editor struct {
 	BaseView
 	style tcell.Style
@@ -36,16 +39,21 @@ type Editor struct {
 
 	lastPos map[string][3]int // filename: [startline, line, column]
 
-	suggest *struct {
-		x, y    int
-		options []string
-		i       int
-		up      bool
-	}
-
 	titleBar *titleBar
+	status   *bindStr
+	suggest  *suggestion
 
-	status *bindStr
+	click *struct {
+		x, y  int
+		since time.Time
+		count int
+	}
+	// select e.buf[e.selection.line-1][e.selection.startCol-1:e.selection.endCol-1]
+	selection *struct {
+		line     int
+		startCol int
+		endCol   int
+	}
 }
 
 func (e *Editor) Click(x, y int) {
@@ -54,8 +62,63 @@ func (e *Editor) Click(x, y int) {
 		return
 	}
 
-	e.BaseView.Click(x, y)
+	// can redraw on selection
+	defer e.BaseView.Click(x, y)
 	e.setCursor(x, y)
+
+	if e.click == nil || e.click.x != x || e.click.y != y ||
+		time.Since(e.click.since) > time.Second/2 {
+		e.click = &struct {
+			x, y  int
+			since time.Time
+			count int
+		}{
+			x: x, y: y, since: time.Now(), count: 1,
+		}
+		e.selection = nil
+		return
+	}
+
+	e.click.count++
+	switch e.click.count {
+	case 2:
+		// double-click expands selection to a word
+		tokens := parseToken(e.buf[e.line-1])
+		for _, t := range tokens {
+			if t.off <= e.column-1 && e.column-1 < (t.off+t.len) {
+				e.selection = &struct {
+					line     int
+					startCol int
+					endCol   int
+				}{
+					line:     e.line,
+					startCol: t.off + 1,
+					endCol:   t.off + t.len + 1,
+				}
+				e.column = e.selection.endCol
+				e.updateCursorPos()
+				break
+			}
+		}
+	case 3:
+		// triple-click expands selection to a line
+		e.selection = &struct {
+			line     int
+			startCol int
+			endCol   int
+		}{
+			line:     e.line,
+			startCol: 1,
+			endCol:   len(e.buf[e.line-1]) + 1,
+		}
+		e.column = e.selection.endCol
+		e.updateCursorPos()
+	default:
+		// cancel selection
+		e.click.count = 1
+		e.selection = nil
+	}
+
 }
 
 func (e *Editor) Focus() (int, int) {
@@ -163,6 +226,7 @@ func (e *Editor) renderLine(screen tcell.Screen, line int) {
 			style = tokenInfo[i].Style().Background(bg)
 		}
 
+		// highlight search results
 		if len(inLineMatch) > 0 && mi < len(inLineMatch) {
 			if inLineMatch[mi][1] <= j && j < inLineMatch[mi][1]+len(e.findKey) {
 				if inLineMatch[mi] == e.findMatch[e.findIndex] {
@@ -175,6 +239,11 @@ func (e *Editor) renderLine(screen tcell.Screen, line int) {
 				// restore
 				style = style.Background(bg)
 			}
+		}
+
+		// highlight selection
+		if e.selection != nil && e.selection.line == line && e.selection.startCol-1 <= j && j <= e.selection.endCol-1 {
+			style = style.Background(tcell.ColorLightGray)
 		}
 
 		screen.SetContent(e.bx1+padding+j, e.by1+line-e.startLine, text[j], nil, style)
@@ -432,7 +501,9 @@ func (e *Editor) Column() int {
 	return col
 }
 
-// If the returned redraw is true, caller should redraw editor,
+// deletes a character to the left of the cursor,
+// or delete the selected characters.
+// If redraw is true, caller should redraw editor,
 // otherwise render the current line.
 func (e *Editor) deleteLeft() (redraw bool) {
 	e.dirty = true
@@ -449,16 +520,14 @@ func (e *Editor) deleteLeft() (redraw bool) {
 		return true
 	}
 
-	text := e.buf[e.line-1]
-	if e.column-1 == len(text) {
-		// line end
-		text = text[:e.column-2]
-	} else {
-		// TODO: maybe slices.Delete ?
-		text = append(text[:e.column-2], text[e.column-1:]...)
+	i, j := e.column-2, e.column-1
+	if e.selection != nil {
+		i = e.selection.startCol - 1
+		j = e.selection.endCol - 1
+		e.selection = nil
 	}
-	e.buf[e.line-1] = text
-	e.cursorColAdd(-1)
+	e.buf[e.line-1] = slices.Delete(e.buf[e.line-1], i, j)
+	e.cursorColAdd(-(j - i))
 	return false
 }
 
@@ -679,6 +748,9 @@ func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
 	case tcell.KeyRight:
 		e.cursorColAdd(1)
 	case tcell.KeyRune:
+		if e.selection != nil {
+			e.deleteLeft()
+		}
 		e.writeRune(ev.Rune())
 		e.renderLine(screen, e.line)
 		if e.suggest != nil {
@@ -723,8 +795,8 @@ func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
 			e.Draw(screen)
 			return
 		}
-
 		e.renderLine(screen, e.line)
+
 		if e.suggest != nil {
 			e.Draw(screen) // clear previous suggestions
 			if e.loadSuggestion() {
@@ -746,6 +818,13 @@ func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
 	}
 }
 
+type suggestion struct {
+	x, y    int
+	options []string
+	i       int
+	up      bool
+}
+
 func (e *Editor) loadSuggestion() bool {
 	word := string(lastToken(e.buf[e.line-1], e.column-2))
 	if len(word) == 0 {
@@ -763,13 +842,7 @@ func (e *Editor) loadSuggestion() bool {
 		// TODO: adjust the number
 		tokens = tokens[:10]
 	}
-	e.suggest = &struct {
-		x       int
-		y       int
-		options []string
-		i       int
-		up      bool
-	}{
+	e.suggest = &suggestion{
 		x:       e.cursorX - len(word),
 		y:       e.cursorY,
 		options: tokens,
