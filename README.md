@@ -8,6 +8,7 @@ and the following functionalities:
 - go to any file
 - code completion
 - split view
+- select words on multiple click
 
 Writing user interface has been an interesting challenge for me, 
 making me rethink and reimplement view, focus, click, hover and popup. 

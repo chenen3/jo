@@ -21,19 +21,16 @@ func newTitleBar(e *Editor, name string) *titleBar {
 }
 
 func (t *titleBar) Click(x, y int) {
+	t.BaseView.Click(x, y)
 	start := t.x
-	for i, name := range t.names {
-		end := start + len(name) + len(" |")
+	for i := range t.names {
+		end := start + len(t.names[i]) + len(" |")
 		if start <= x && x <= end {
-			if i == t.index {
-				// clicked on current title
-				return
-			}
 			t.index = i
+			return
 		}
 		start = end + 1
 	}
-	t.BaseView.Click(x, y)
 }
 
 // Close current name

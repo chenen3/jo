@@ -18,7 +18,8 @@ import (
 // TODO: undo/redo changes, aka editing history
 type Editor struct {
 	BaseView
-	style tcell.Style
+	screen tcell.Screen
+	style  tcell.Style
 
 	// editing buffer
 	buf      [][]rune
@@ -43,10 +44,10 @@ type Editor struct {
 	status   *bindStr
 	suggest  *suggestion
 
-	click *struct {
+	clickCount *struct {
 		x, y  int
+		n     int
 		since time.Time
-		count int
 	}
 	// select e.buf[e.selection.line-1][e.selection.startCol-1:e.selection.endCol-1]
 	selection *struct {
@@ -58,29 +59,38 @@ type Editor struct {
 
 func (e *Editor) Click(x, y int) {
 	if inView(e.titleBar, x, y) {
+		lastNameIdx := e.titleBar.index
 		e.titleBar.Click(x, y)
+		if e.titleBar.index != lastNameIdx {
+			e.Load(e.titleBar.names[e.titleBar.index])
+			e.Draw(e.screen)
+		}
 		return
 	}
 
-	// can redraw on selection
-	defer e.BaseView.Click(x, y)
+	e.BaseView.Click(x, y)
 	e.setCursor(x, y)
 
-	if e.click == nil || e.click.x != x || e.click.y != y ||
-		time.Since(e.click.since) > time.Second/2 {
-		e.click = &struct {
+	if e.clickCount == nil || e.clickCount.x != x || e.clickCount.y != y ||
+		time.Since(e.clickCount.since) > time.Second/2 {
+		e.clickCount = &struct {
 			x, y  int
+			n     int
 			since time.Time
-			count int
 		}{
-			x: x, y: y, since: time.Now(), count: 1,
+			x: x, y: y, since: time.Now(), n: 1,
 		}
-		e.selection = nil
+		// restore the previous selected characters
+		if e.selection != nil {
+			line := e.selection.line
+			e.selection = nil
+			e.drawLine(e.screen, line)
+		}
 		return
 	}
 
-	e.click.count++
-	switch e.click.count {
+	e.clickCount.n++
+	switch e.clickCount.n {
 	case 2:
 		// double-click expands selection to a word
 		tokens := parseToken(e.buf[e.line-1])
@@ -115,10 +125,10 @@ func (e *Editor) Click(x, y int) {
 		e.updateCursorPos()
 	default:
 		// cancel selection
-		e.click.count = 1
+		e.clickCount.n = 1
 		e.selection = nil
 	}
-
+	e.drawLine(e.screen, e.line)
 }
 
 func (e *Editor) Focus() (int, int) {
@@ -128,9 +138,10 @@ func (e *Editor) Focus() (int, int) {
 
 var tokenTree = new(node)
 
-func newEditor(filename string, status *bindStr) *Editor {
+func newEditor(screen tcell.Screen, filename string, status *bindStr) *Editor {
 	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	e := &Editor{
+		screen:    screen,
 		style:     style,
 		startLine: 1,
 		line:      1,
@@ -190,7 +201,7 @@ func leadingTabs(line []rune) int {
 	return n
 }
 
-func (e *Editor) renderLine(screen tcell.Screen, line int) {
+func (e *Editor) drawLine(screen tcell.Screen, line int) {
 	text := e.buf[line-1]
 	for x := e.bx1; x <= e.bx2; x++ {
 		if x <= e.bx1+len(text)-1 {
@@ -297,7 +308,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		if e.startLine-1+i >= len(e.buf) {
 			break
 		}
-		e.renderLine(screen, e.startLine+i)
+		e.drawLine(screen, e.startLine+i)
 	}
 }
 
@@ -752,7 +763,7 @@ func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
 			e.deleteLeft()
 		}
 		e.writeRune(ev.Rune())
-		e.renderLine(screen, e.line)
+		e.drawLine(screen, e.line)
 		if e.suggest != nil {
 			e.Draw(screen) // clear previous suggestions
 			if e.loadSuggestion() {
@@ -762,7 +773,7 @@ func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
 	case tcell.KeyTab:
 		if e.column == 1 { // TODO
 			e.writeRune('\t')
-			e.renderLine(screen, e.line)
+			e.drawLine(screen, e.line)
 			return
 		}
 
@@ -777,7 +788,7 @@ func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
 		if e.loadSuggestion() {
 			if len(e.suggest.options) == 1 {
 				e.accecptSuggestion()
-				e.renderLine(screen, e.line)
+				e.drawLine(screen, e.line)
 			} else {
 				e.showSuggestion(screen)
 			}
@@ -795,7 +806,7 @@ func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
 			e.Draw(screen)
 			return
 		}
-		e.renderLine(screen, e.line)
+		e.drawLine(screen, e.line)
 
 		if e.suggest != nil {
 			e.Draw(screen) // clear previous suggestions
@@ -805,10 +816,10 @@ func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
 		}
 	case tcell.KeyCtrlU:
 		e.deleteToLineStart()
-		e.renderLine(screen, e.line)
+		e.drawLine(screen, e.line)
 	case tcell.KeyCtrlK:
 		e.deleteToLineEnd()
-		e.renderLine(screen, e.line)
+		e.drawLine(screen, e.line)
 	case tcell.KeyESC:
 		if e.suggest != nil {
 			e.suggest = nil

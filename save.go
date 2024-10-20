@@ -6,7 +6,8 @@ import (
 
 type saveBar struct {
 	BaseView
-	name []rune
+	name   []rune
+	prompt bool
 }
 
 func (s *saveBar) Draw(screen tcell.Screen) {
@@ -39,7 +40,7 @@ func (s *saveBar) Draw(screen tcell.Screen) {
 		screen.ShowCursor(s.cursorX, s.cursorY)
 	}
 
-	keymap := "<enter>save  <esc>cancel"
+	keymap := "<enter>save  <esc>cancel <ctrl+w>close"
 	for i, c := range keymap {
 		// align center
 		screen.SetContent(s.x+(s.width-len(keymap))/2+i, s.y+s.height-1, c, nil, style)
