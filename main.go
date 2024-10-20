@@ -147,7 +147,6 @@ func main() {
 	gb := new(gotoBar)
 	gb.SetPos((width-optionWidth)/2, 3, optionWidth, 1)
 	gb.Handle(tcell.KeyEsc, func(k *tcell.EventKey, screen tcell.Screen) {
-		gb.keyword = nil
 		app.Redraw()
 		app.Focus(recentE)
 	})
@@ -208,8 +207,6 @@ func main() {
 			}
 			app.Redraw()
 			app.Focus(recentE)
-			gb.index = 0
-			gb.keyword = nil
 			return
 		}
 		// go to file
@@ -217,8 +214,6 @@ func main() {
 			recentE.Load(gb.options[gb.index])
 			app.Redraw()
 			app.Focus(recentE)
-			gb.keyword = nil
-			gb.index = 0
 		}
 	})
 	gb.Handle(tcell.KeyUp, func(k *tcell.EventKey, screen tcell.Screen) {
@@ -274,12 +269,16 @@ func main() {
 		}
 	})
 	app.Handle(tcell.KeyCtrlP, func(*tcell.EventKey) {
+		gb.keyword = nil
+		gb.index = 0
 		width, _ := app.Screen().Size()
 		gb.SetPos((width-optionWidth)/2, 3, optionWidth, 1)
 		gb.Draw(app.Screen())
 		app.Focus(gb)
 	})
 	app.Handle(tcell.KeyCtrlG, func(*tcell.EventKey) {
+		gb.keyword = nil
+		gb.index = 0
 		width, _ := app.Screen().Size()
 		gb.SetPos((width-optionWidth)/2, 3, optionWidth, 1)
 		gb.keyword = []rune{':'}
