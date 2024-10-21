@@ -1,21 +1,16 @@
-# Jo
-
-Jo is a text editor written for fun, consisting of 2,000 lines of code 
-and the following functionalities:
+The code implements a text editor that supports the following features:
 - syntax highlighting
 - search
 - tabs
-- go to any file
+- go to any file or line
 - code completion
 - split view
-- select words on multiple click
+- multiple selection
 
-Writing user interface has been an interesting challenge for me, 
-making me rethink and reimplement view, focus, click, hover and popup. 
+The implementation depends on [tcell](https://github.com/gdamore/tcell),
+so it works in the terminal, but draws the UI from scratch 
+and manages focus, click, hover and popup itself.
 
-![screenshot](./image/splitview.png)
-![screenshot search](./image/search.png)
-![screenshot completion](./image/completion.png)
-
-## Credit
-Jo depends on [tcell](https://github.com/gdamore/tcell)
+Here are the screenshots:
+![search](./image/search.png)
+![completion](./image/completion.png)

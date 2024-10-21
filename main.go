@@ -86,18 +86,22 @@ func main() {
 	fb.Handle(tcell.KeyEnter, func(k *tcell.EventKey, screen tcell.Screen) {
 		recentE.FindNext()
 		recentE.Draw(screen)
+		fb.Draw(screen)
 	})
 	fb.Handle(tcell.KeyDown, func(k *tcell.EventKey, screen tcell.Screen) {
 		recentE.FindNext()
 		recentE.Draw(screen)
+		fb.Draw(screen)
 	})
 	fb.Handle(tcell.KeyUp, func(k *tcell.EventKey, screen tcell.Screen) {
 		recentE.FindPrev()
 		recentE.Draw(screen)
+		fb.Draw(screen)
 	})
 	fb.Handle(tcell.KeyESC, func(k *tcell.EventKey, screen tcell.Screen) {
 		fb.keyword = nil
 		app.Focus(recentE)
+		recentE.findMatch = nil
 		recentE.Draw(screen) // cover the findbar
 	})
 
@@ -242,6 +246,7 @@ func main() {
 		app.Close()
 	})
 	app.Handle(tcell.KeyCtrlF, func(*tcell.EventKey) {
+		recentE.findLine = recentE.line
 		width, _ := app.Screen().Size()
 		fb.SetPos(width-40, 1, 40, 1)
 		app.Focus(fb)
@@ -294,8 +299,10 @@ func main() {
 			return
 		}
 
-		recentE.CloseBuffer()
+		recentE.titleBar.Close()
 		if len(recentE.titleBar.names) > 0 {
+			recentE.Load(recentE.titleBar.names[recentE.titleBar.index])
+			recentE.Draw(app.Screen())
 			return
 		}
 

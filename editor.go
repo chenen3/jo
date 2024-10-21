@@ -215,10 +215,10 @@ func (e *Editor) drawLine(screen tcell.Screen, line int) {
 	}
 
 	var mi int
-	var inLineMatch [][2]int
+	var matches [][2]int
 	for _, m := range e.findMatch {
 		if m[0] == line-1 {
-			inLineMatch = append(inLineMatch, m)
+			matches = append(matches, m)
 		}
 	}
 
@@ -238,14 +238,14 @@ func (e *Editor) drawLine(screen tcell.Screen, line int) {
 		}
 
 		// highlight search results
-		if len(inLineMatch) > 0 && mi < len(inLineMatch) {
-			if inLineMatch[mi][1] <= j && j < inLineMatch[mi][1]+len(e.findKey) {
-				if inLineMatch[mi] == e.findMatch[e.findIndex] {
+		if len(matches) > 0 && mi < len(matches) {
+			if matches[mi][1] <= j && j < matches[mi][1]+len(e.findKey) {
+				if matches[mi] == e.findMatch[e.findIndex] {
 					style = style.Background(tcell.ColorYellow)
 				} else {
-					style = style.Background(tcell.ColorLightYellow)
+					style = style.Background(tcell.ColorLightGray)
 				}
-			} else if j >= inLineMatch[mi][1]+len(e.findKey) {
+			} else if j >= matches[mi][1]+len(e.findKey) {
 				mi++
 				// restore
 				style = style.Background(bg)
@@ -599,7 +599,6 @@ func (e *Editor) Find(s string) {
 		return
 	}
 	e.findKey = s
-	e.findLine = e.line
 
 	var match [][2]int
 	for i := range e.buf {
@@ -617,9 +616,8 @@ func (e *Editor) Find(s string) {
 	if len(match) == 0 {
 		return
 	}
-	// defer e.Draw()
 
-	// jump to the nearest matching line
+	// jump to the nearest match
 	var minGap = len(e.buf)
 	var near int
 	for i, m := range match {
@@ -771,7 +769,8 @@ func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
 			}
 		}
 	case tcell.KeyTab:
-		if e.column == 1 { // TODO
+		// insert '\t' at the head of line
+		if e.column == 1 || e.buf[e.line-1][e.column-2] == '\t' {
 			e.writeRune('\t')
 			e.drawLine(screen, e.line)
 			return
@@ -826,6 +825,11 @@ func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
 			e.Draw(screen)
 			return
 		}
+		if e.findMatch != nil {
+			e.ClearFind()
+			e.Draw(screen)
+			return
+		}
 	}
 }
 
@@ -837,13 +841,13 @@ type suggestion struct {
 }
 
 func (e *Editor) loadSuggestion() bool {
-	word := string(lastToken(e.buf[e.line-1], e.column-2))
-	if len(word) == 0 {
+	prevWord := string(getToken(e.buf[e.line-1], e.column-2))
+	if len(prevWord) == 0 {
 		e.suggest = nil
 		return false
 	}
 
-	tokens := tokenTree.get(word)
+	tokens := tokenTree.get(prevWord)
 	if len(tokens) == 0 {
 		e.suggest = nil
 		return false
@@ -854,7 +858,7 @@ func (e *Editor) loadSuggestion() bool {
 		tokens = tokens[:10]
 	}
 	e.suggest = &suggestion{
-		x:       e.cursorX - len(word),
+		x:       e.cursorX - len(prevWord),
 		y:       e.cursorY,
 		options: tokens,
 	}
@@ -891,7 +895,7 @@ func (e *Editor) showSuggestion(screen tcell.Screen) {
 }
 
 func (e *Editor) accecptSuggestion() {
-	word := string(lastToken(e.buf[e.line-1], e.column-2))
+	word := string(getToken(e.buf[e.line-1], e.column-2))
 	e.buf[e.line-1] = e.buf[e.line-1][:e.column-1-len(word)]
 	e.cursorColAdd(-len(word))
 	e.writeString(e.suggest.options[e.suggest.i])
@@ -900,8 +904,10 @@ func (e *Editor) accecptSuggestion() {
 }
 
 func (e *Editor) ClearFind() {
+	e.findLine = 0
 	e.findKey = ""
 	e.findMatch = nil
+	e.findIndex = 0
 }
 
 func (e *Editor) SetPos(x, y, width, height int) {
@@ -956,17 +962,6 @@ func (e *Editor) Load(filename string) {
 	e.suggest = nil
 	e.titleBar.Add(filename)
 	e.status.Set(fmt.Sprintf("line %d, column %d", e.line, e.Column()))
-}
-
-func (e *Editor) CloseBuffer() {
-	if len(e.titleBar.names) == 0 {
-		return
-	}
-
-	e.titleBar.Close()
-	if len(e.titleBar.names) > 0 {
-		e.Load(e.titleBar.names[e.titleBar.index])
-	}
 }
 
 type lineBar struct {

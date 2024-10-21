@@ -135,7 +135,7 @@ func parseToken(line []rune) []tokenInfo {
 	return s
 }
 
-func lastToken(s []rune, i int) []rune {
+func getToken(s []rune, i int) []rune {
 	for _, t := range parseToken(s) {
 		if t.off <= i && i < t.off+t.len {
 			token := s[t.off : t.off+t.len]

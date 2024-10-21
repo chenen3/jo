@@ -17,7 +17,7 @@ func (f *findBar) SetPos(x, y, w, h int) {
 }
 
 func (f *findBar) Draw(screen tcell.Screen) {
-	style := tcell.StyleDefault.Background(tcell.ColorLightYellow).Foreground(tcell.ColorBlack)
+	style := tcell.StyleDefault.Background(tcell.ColorLightGray).Foreground(tcell.ColorBlack)
 	for y := f.y; y < f.y+f.height; y++ {
 		for x := f.x; x < f.x+f.width; x++ {
 			screen.SetContent(x, y, ' ', nil, style)
