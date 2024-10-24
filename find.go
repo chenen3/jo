@@ -9,7 +9,6 @@ type findBar struct {
 	keyword []rune
 }
 
-// TODO: consider adding the cursor to baseView
 func (f *findBar) SetPos(x, y, w, h int) {
 	f.BaseView.SetPos(x, y, w, h)
 	f.cursorX = x

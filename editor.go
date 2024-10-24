@@ -15,7 +15,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-// TODO: undo/redo changes, aka editing history
+// TODO: undo or redo changes
 type Editor struct {
 	BaseView
 	screen tcell.Screen
@@ -559,14 +559,8 @@ func (e *Editor) cursorEnter() {
 	text := e.buf[e.line-1]
 	newText := make([]rune, len(text[e.column-1:]))
 	copy(newText, text[e.column-1:])
-	e.buf[e.line-1] = text[:e.column-1]
-	// TODO: not efficient
-	buf := make([][]rune, len(e.buf[e.line:]))
-	for i, rs := range e.buf[e.line:] {
-		buf[i] = make([]rune, len(rs))
-		copy(buf[i], rs)
-	}
-	e.buf = append(append(e.buf[:e.line], newText), buf...)
+	e.buf[e.line-1] = e.buf[e.line-1][:e.column-1]
+	e.buf = slices.Insert(e.buf, e.line, newText)
 	e.cursorLineAdd(1)
 	e.cursorLineStart()
 }
@@ -574,24 +568,21 @@ func (e *Editor) cursorEnter() {
 // A newline is appended if the last character of buffer is not
 // already a newline
 func (e *Editor) WriteTo(w io.Writer) (int64, error) {
-	if len(e.buf[len(e.buf)-1]) != 0 {
-		// file ends with a new line
-		e.buf = append(e.buf, []rune{})
+	var b bytes.Buffer
+	for i := range e.buf {
+		b.WriteString(string(e.buf[i]))
+		if i != len(e.buf)-1 || len(e.buf[i]) != 0 {
+			b.WriteString("\n")
+		}
 	}
-	// TODO: not efficient
-	buf := make([][]byte, len(e.buf))
-	for i, rs := range e.buf {
-		buf[i] = []byte(string(rs))
-	}
-	bs := bytes.Join(buf, []byte{'\n'})
-
-	n, err := w.Write(bs)
+	n, err := b.WriteTo(w)
 	if err != nil {
-		return int64(n), err
+		return n, err
 	}
+
 	e.dirty = false
 	buildTokenTree(tokenTree, e.buf)
-	return int64(n), nil
+	return n, nil
 }
 
 func (e *Editor) Find(s string) {
@@ -853,9 +844,10 @@ func (e *Editor) loadSuggestion() bool {
 		return false
 	}
 
-	if len(tokens) > 10 {
-		// TODO: adjust the number
-		tokens = tokens[:10]
+	// are ten options enough for most cases ?
+	max := 10
+	if len(tokens) > max {
+		tokens = tokens[:max+1]
 	}
 	e.suggest = &suggestion{
 		x:       e.cursorX - len(prevWord),
@@ -900,7 +892,6 @@ func (e *Editor) accecptSuggestion() {
 	e.cursorColAdd(-len(word))
 	e.writeString(e.suggest.options[e.suggest.i])
 	e.suggest = nil
-	// e.Draw() // TODO: no need to refresh the whole screen
 }
 
 func (e *Editor) ClearFind() {
