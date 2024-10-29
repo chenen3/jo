@@ -15,7 +15,6 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-// TODO: undo or redo changes
 type Editor struct {
 	BaseView
 	screen tcell.Screen
@@ -55,6 +54,9 @@ type Editor struct {
 		startCol int
 		endCol   int
 	}
+
+	history     []Action // stack of changes
+	historyUndo []Action
 }
 
 func (e *Editor) Click(x, y int) {
@@ -106,7 +108,7 @@ func (e *Editor) Click(x, y int) {
 					endCol:   t.off + t.len + 1,
 				}
 				e.column = e.selection.endCol
-				e.updateCursorPos()
+				e.syncCursor()
 				break
 			}
 		}
@@ -122,7 +124,7 @@ func (e *Editor) Click(x, y int) {
 			endCol:   len(e.buf[e.line-1]) + 1,
 		}
 		e.column = e.selection.endCol
-		e.updateCursorPos()
+		e.syncCursor()
 	default:
 		// cancel selection
 		e.clickCount.n = 1
@@ -285,7 +287,7 @@ func (e *Editor) Draw(screen tcell.Screen) {
 	e.bx2 = e.x + e.width - 1
 	e.by2 = e.y + e.height - 1
 
-	e.updateCursorPos()
+	e.syncCursor()
 	if e.focused {
 		screen.ShowCursor(e.cursorX, e.cursorY)
 	}
@@ -328,17 +330,17 @@ func (e *Editor) cursorLineAdd(delta int) {
 	if e.column > len(e.buf[e.line-1])+1 {
 		e.column = len(e.buf[e.line-1]) + 1
 	}
-	e.updateCursorPos()
+	e.syncCursor()
 }
 
-func (e *Editor) updateCursorPos() {
+func (e *Editor) syncCursor() {
 	e.status.Set(fmt.Sprintf("line %d, column %d", e.line, e.Column()))
 	e.cursorX = e.bx1 + e.Column() - 1
 	e.cursorY = e.by1 + e.line - e.startLine
 }
 
 func (e *Editor) cursorColAdd(delta int) {
-	defer e.updateCursorPos()
+	defer e.syncCursor()
 
 	col := e.column + delta
 	if 1 <= col && col <= len(e.buf[e.line-1])+1 {
@@ -394,7 +396,7 @@ func (e *Editor) setCursor(x, y int) {
 		col = len(e.buf[line-1]) + 1
 	}
 	e.line, e.column = line, col
-	e.updateCursorPos()
+	e.syncCursor()
 }
 
 func (e *Editor) cursorUp() (redraw bool) {
@@ -402,7 +404,7 @@ func (e *Editor) cursorUp() (redraw bool) {
 		return false
 	}
 
-	defer e.updateCursorPos()
+	defer e.syncCursor()
 	if e.line == e.startLine {
 		e.startLine--
 		e.cursorLineAdd(-1)
@@ -418,7 +420,7 @@ func (e *Editor) cursorDown() (redraw bool) {
 		return false
 	}
 
-	defer e.updateCursorPos()
+	defer e.syncCursor()
 	if e.line < e.startLine+e.PageSize()-1 {
 		e.cursorLineAdd(1)
 		return false
@@ -431,7 +433,7 @@ func (e *Editor) cursorDown() (redraw bool) {
 
 // go to the first non-whitespace character in line
 func (e *Editor) cursorLineStart() {
-	defer e.updateCursorPos()
+	defer e.syncCursor()
 	for i, c := range e.buf[e.line-1] {
 		if c != ' ' && c != '\t' {
 			e.column = i + 1
@@ -472,24 +474,17 @@ func (e *Editor) ScrollDown(delta int) (ok bool) {
 }
 
 func (e *Editor) writeRune(r rune) {
-	text := e.buf[e.line-1]
-	rs := make([]rune, len(text[e.column-1:]))
-	copy(rs, text[e.column-1:])
-	text = append(append(text[:e.column-1], r), rs...)
-	e.buf[e.line-1] = text
-	// e.renderLine(e.line)
-	e.cursorColAdd(1)
-	e.dirty = true
+	e.do(
+		Insert(e, pos{e.line - 1, e.column - 1}, string([]rune{r})),
+		Move(e, pos{e.line - 1, e.column}),
+	)
 }
 
 func (e *Editor) writeString(s string) {
-	text := e.buf[e.line-1]
-	rs := make([]rune, len(text[e.column-1:]))
-	copy(rs, text[e.column-1:])
-	text = append(append(text[:e.column-1], []rune(s)...), rs...)
-	e.buf[e.line-1] = text
-	e.cursorColAdd(len(s))
-	e.dirty = true
+	e.do(
+		Insert(e, pos{e.line - 1, e.column - 1}, s),
+		Move(e, pos{e.line - 1, e.column - 1 + len(s)}),
+	)
 }
 
 // Line return current line number in editor
@@ -518,7 +513,7 @@ func (e *Editor) Column() int {
 // otherwise render the current line.
 func (e *Editor) deleteLeft() (redraw bool) {
 	e.dirty = true
-	// cursor at line start, merge the line to previous one
+	// cursor at the head of line, so concatenate previous line
 	if e.column == 1 {
 		if e.line == 1 {
 			return
@@ -537,20 +532,15 @@ func (e *Editor) deleteLeft() (redraw bool) {
 		j = e.selection.endCol - 1
 		e.selection = nil
 	}
-	e.buf[e.line-1] = slices.Delete(e.buf[e.line-1], i, j)
-	e.cursorColAdd(-(j - i))
+	e.do(
+		Delete(e, pos{e.line - 1, i}, pos{e.line - 1, j}),
+		Move(e, pos{e.line - 1, i}),
+	)
 	return false
 }
 
-func (e *Editor) deleteToLineStart() {
-	e.dirty = true
-	e.buf[e.line-1] = e.buf[e.line-1][e.column-1:]
-	e.cursorLineStart()
-}
-
-func (e *Editor) deleteToLineEnd() {
-	e.dirty = true
-	e.buf[e.line-1] = e.buf[e.line-1][:e.column-1]
+func (e *Editor) delete(start, stop pos) {
+	e.do(Delete(e, start, stop), Move(e, start))
 }
 
 func (e *Editor) cursorEnter() {
@@ -749,7 +739,7 @@ func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
 		e.cursorColAdd(1)
 	case tcell.KeyRune:
 		if e.selection != nil {
-			e.deleteLeft()
+			e.delete(pos{e.selection.line - 1, e.selection.startCol - 1}, pos{e.selection.line, e.selection.endCol - 1})
 		}
 		e.writeRune(ev.Rune())
 		e.drawLine(screen, e.line)
@@ -767,7 +757,7 @@ func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
 			return
 		}
 
-		// on second <tab>, accept the first suggestion
+		// on second <tab>, accept suggestion
 		if e.suggest != nil {
 			e.accecptSuggestion()
 			e.Draw(screen)
@@ -805,10 +795,10 @@ func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
 			}
 		}
 	case tcell.KeyCtrlU:
-		e.deleteToLineStart()
+		e.delete(pos{e.line - 1, 0}, pos{e.line - 1, e.column - 1})
 		e.drawLine(screen, e.line)
 	case tcell.KeyCtrlK:
-		e.deleteToLineEnd()
+		e.delete(pos{e.line - 1, e.column - 1}, pos{e.line - 1, len(e.buf[e.line-1])})
 		e.drawLine(screen, e.line)
 	case tcell.KeyESC:
 		if e.suggest != nil {
@@ -821,6 +811,12 @@ func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
 			e.Draw(screen)
 			return
 		}
+	case tcell.KeyCtrlZ:
+		e.undo()
+		e.Draw(screen)
+	case tcell.KeyCtrlR:
+		e.redo()
+		e.Draw(screen)
 	}
 }
 
@@ -996,5 +992,129 @@ func buildTokenTree(tree *node, buf [][]rune) {
 				tree.set(t)
 			}
 		}
+	}
+}
+
+func (e *Editor) do(a ...Action) {
+	if len(a) == 0 {
+		return
+	}
+	action := group(a)
+	action.Do()
+	e.history = append(e.history, action)
+	e.historyUndo = nil
+	e.dirty = true
+}
+
+func (e *Editor) undo() {
+	if len(e.history) == 0 {
+		return
+	}
+	act := e.history[len(e.history)-1]
+	act.Undo()
+	e.history = e.history[:len(e.history)-1]
+	e.historyUndo = append(e.historyUndo, act)
+	e.dirty = true
+}
+
+func (e *Editor) redo() {
+	if len(e.historyUndo) == 0 {
+		return
+	}
+	act := e.historyUndo[len(e.historyUndo)-1]
+	act.Do()
+	e.historyUndo = e.historyUndo[:len(e.historyUndo)-1]
+	e.history = append(e.history, act)
+	e.dirty = true
+}
+
+// Action represents a buffer change or cursor movement, or both.
+type Action interface {
+	Do()
+	Undo()
+}
+
+// FIXME: e.column starts from 1, a bit confused
+// row and column, starting from 0.
+type pos [2]int
+
+type insertion struct {
+	e   *Editor
+	pos pos
+	str string
+}
+
+func Insert(e *Editor, p pos, str string) insertion {
+	return insertion{e: e, pos: p, str: str}
+}
+
+func (i insertion) Do() {
+	i.e.buf[i.pos[0]] = slices.Insert(i.e.buf[i.pos[0]], i.pos[1], []rune(i.str)...)
+}
+
+func (i insertion) Undo() {
+	i.e.buf[i.pos[0]] = slices.Delete(i.e.buf[i.pos[0]], i.pos[1], i.pos[1]+len(i.str))
+}
+
+type deletion struct {
+	e     *Editor
+	start pos
+	stop  pos
+	str   string
+}
+
+func Delete(e *Editor, start, stop pos) deletion {
+	return deletion{
+		e:     e,
+		start: start,
+		stop:  stop,
+		str:   string(e.buf[start[0]][start[1]:stop[1]]),
+	}
+}
+
+func (d deletion) Do() {
+	d.e.buf[d.start[0]] = slices.Delete(d.e.buf[d.start[0]], d.start[1], d.stop[1])
+}
+
+func (d deletion) Undo() {
+	d.e.buf[d.start[0]] = slices.Insert(d.e.buf[d.start[0]], d.start[1], []rune(d.str)...)
+}
+
+// cursor movement
+type movement struct {
+	e   *Editor
+	old pos
+	new pos
+}
+
+func Move(e *Editor, to pos) movement {
+	return movement{
+		e:   e,
+		old: pos{e.line - 1, e.column - 1},
+		new: to,
+	}
+}
+
+func (m movement) Do() {
+	m.e.line, m.e.column = m.new[0]+1, m.new[1]+1
+	m.e.syncCursor()
+}
+
+func (m movement) Undo() {
+	m.e.line, m.e.column = m.old[0]+1, m.old[1]+1
+	m.e.syncCursor()
+}
+
+type group []Action
+
+func (g group) Do() {
+	for _, act := range g {
+		act.Do()
+	}
+}
+
+func (g group) Undo() {
+	for _, act := range g {
+		act.Undo()
 	}
 }
