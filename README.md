@@ -5,6 +5,7 @@ The code implements a text editor that supports the following features:
 - go to any file or line
 - code completion
 - split view
+- undo and redo
 
 The implementation depends on [tcell](https://github.com/gdamore/tcell),
 so it works in the terminal, but draws the UI from scratch 
