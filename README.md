@@ -12,5 +12,6 @@ so it works in the terminal, but draws the UI from scratch
 and manages focus, click, hover and popup itself.
 
 Here are the screenshots:
-![search](./image/search.png)
-![completion](./image/completion.png)
+
+<img width="777" alt="search" src="https://github.com/user-attachments/assets/dc6c1232-b351-4877-a2e6-550bf68f391e">
+<img width="777" alt="completion" src="https://github.com/user-attachments/assets/af7b9ecc-8260-48e4-a9be-c4e5104a5b6e">
