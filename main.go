@@ -101,7 +101,7 @@ func main() {
 	fb.Handle(tcell.KeyESC, func(k *tcell.EventKey, screen tcell.Screen) {
 		fb.keyword = nil
 		app.Focus(recentE)
-		recentE.findMatch = nil
+		recentE.ClearFind()
 		recentE.Draw(screen) // cover the findbar
 	})
 
@@ -205,9 +205,9 @@ func main() {
 			recentE.line = line
 			recentE.column = 1
 			if line <= recentE.PageSize()/2 {
-				recentE.startLine = 1
+				recentE.top = 1
 			} else {
-				recentE.startLine = line - recentE.PageSize()/2
+				recentE.top = line - recentE.PageSize()/2
 			}
 			app.Redraw()
 			app.Focus(recentE)
@@ -246,7 +246,7 @@ func main() {
 		app.Close()
 	})
 	app.Handle(tcell.KeyCtrlF, func(*tcell.EventKey) {
-		recentE.findLine = recentE.line
+		recentE.find.line = recentE.line
 		width, _ := app.Screen().Size()
 		fb.SetPos(width-40, 1, 40, 1)
 		app.Focus(fb)

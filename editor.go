@@ -24,24 +24,22 @@ type Editor struct {
 	buf      [][]rune
 	bx1, by1 int
 	bx2, by2 int
-	line     int // line number, starting at 1
-	column   int // column number, starting at 1
+	top      int // top line number
+	line     int // cursor line number, starting at 1
+	column   int // cursor column number, starting at 1
 	dirty    bool
 	filename string
 
-	lineBar   *lineBar
-	startLine int // starting line number
-
-	findKey   string
-	findLine  int // line number when starting to find
-	findMatch [][2]int
-	findIndex int // index of the matching result
-
-	lastPos map[string][3]int // filename: [startline, line, column]
+	lineBar *lineBar
 
 	titleBar *titleBar
 	status   *bindStr
-	suggest  *suggestion
+
+	lastPos map[string][3]int // filename: [top, line, column]
+
+	suggest *suggestion
+
+	find find
 
 	clickCount *struct {
 		x, y  int
@@ -55,8 +53,15 @@ type Editor struct {
 		endCol   int
 	}
 
-	history     []Action // stack of changes
-	historyUndo []Action
+	history     []Action // stack of changes, for undo
+	historyUndo []Action // for redo
+}
+
+type find struct {
+	key   string
+	line  int // line number when starting to find
+	match [][2]int
+	index int // index of the matching result
 }
 
 func (e *Editor) Click(x, y int) {
@@ -143,12 +148,12 @@ var tokenTree = new(node)
 func newEditor(screen tcell.Screen, filename string, status *bindStr) *Editor {
 	style := tcell.StyleDefault.Background(tcell.ColorReset).Foreground(tcell.ColorReset)
 	e := &Editor{
-		screen:    screen,
-		style:     style,
-		startLine: 1,
-		line:      1,
-		column:    1,
-		filename:  filename,
+		screen:   screen,
+		style:    style,
+		top:      1,
+		line:     1,
+		column:   1,
+		filename: filename,
 		lineBar: &lineBar{
 			style: style.Foreground(tcell.ColorGray),
 		},
@@ -209,7 +214,7 @@ func (e *Editor) drawLine(screen tcell.Screen, line int) {
 		if x <= e.bx1+len(text)-1 {
 			continue
 		}
-		screen.SetContent(x, e.by1+line-e.startLine, ' ', nil, e.style)
+		screen.SetContent(x, e.by1+line-e.top, ' ', nil, e.style)
 	}
 
 	if len(text) == 0 {
@@ -218,7 +223,7 @@ func (e *Editor) drawLine(screen tcell.Screen, line int) {
 
 	var mi int
 	var matches [][2]int
-	for _, m := range e.findMatch {
+	for _, m := range e.find.match {
 		if m[0] == line-1 {
 			matches = append(matches, m)
 		}
@@ -241,13 +246,13 @@ func (e *Editor) drawLine(screen tcell.Screen, line int) {
 
 		// highlight search results
 		if len(matches) > 0 && mi < len(matches) {
-			if matches[mi][1] <= j && j < matches[mi][1]+len(e.findKey) {
-				if matches[mi] == e.findMatch[e.findIndex] {
+			if matches[mi][1] <= j && j < matches[mi][1]+len(e.find.key) {
+				if matches[mi] == e.find.match[e.find.index] {
 					style = style.Background(tcell.ColorYellow)
 				} else {
 					style = style.Background(tcell.ColorLightGray)
 				}
-			} else if j >= matches[mi][1]+len(e.findKey) {
+			} else if j >= matches[mi][1]+len(e.find.key) {
 				mi++
 				// restore
 				style = style.Background(bg)
@@ -259,13 +264,13 @@ func (e *Editor) drawLine(screen tcell.Screen, line int) {
 			style = style.Background(tcell.ColorLightGray)
 		}
 
-		screen.SetContent(e.bx1+padding+j, e.by1+line-e.startLine, text[j], nil, style)
+		screen.SetContent(e.bx1+padding+j, e.by1+line-e.top, text[j], nil, style)
 		if j < tabs {
 			// consider showing tab as '|' for debugging
-			screen.SetContent(e.bx1+padding+j, e.by1+line-e.startLine, ' ', nil, e.style.Foreground(tcell.ColorGray))
+			screen.SetContent(e.bx1+padding+j, e.by1+line-e.top, ' ', nil, e.style.Foreground(tcell.ColorGray))
 			for k := 0; k < tabWidth-1; k++ {
 				padding++
-				screen.SetContent(e.bx1+padding+j, e.by1+line-e.startLine, ' ', nil, e.style.Foreground(tcell.ColorGray))
+				screen.SetContent(e.bx1+padding+j, e.by1+line-e.top, ' ', nil, e.style.Foreground(tcell.ColorGray))
 			}
 		}
 	}
@@ -292,12 +297,12 @@ func (e *Editor) Draw(screen tcell.Screen) {
 		screen.ShowCursor(e.cursorX, e.cursorY)
 	}
 
-	e.lineBar.startLine = e.startLine
-	endLine := e.startLine + e.PageSize() - 1
+	e.lineBar.top = e.top
+	endLine := e.top + e.PageSize() - 1
 	if endLine > len(e.buf) {
 		endLine = len(e.buf)
 	}
-	e.lineBar.endLine = endLine
+	e.lineBar.bottom = endLine
 	e.lineBar.render(screen)
 
 	for y := e.by1; y <= e.by2; y++ {
@@ -307,10 +312,10 @@ func (e *Editor) Draw(screen tcell.Screen) {
 	}
 
 	for i := 0; i < e.PageSize(); i++ {
-		if e.startLine-1+i >= len(e.buf) {
+		if e.top-1+i >= len(e.buf) {
 			break
 		}
-		e.drawLine(screen, e.startLine+i)
+		e.drawLine(screen, e.top+i)
 	}
 }
 
@@ -336,7 +341,7 @@ func (e *Editor) cursorLineAdd(delta int) {
 func (e *Editor) syncCursor() {
 	e.status.Set(fmt.Sprintf("line %d, column %d", e.line, e.Column()))
 	e.cursorX = e.bx1 + e.Column() - 1
-	e.cursorY = e.by1 + e.line - e.startLine
+	e.cursorY = e.by1 + e.line - e.top
 }
 
 func (e *Editor) cursorColAdd(delta int) {
@@ -373,7 +378,7 @@ func (e *Editor) setCursor(x, y int) {
 	if y < e.by1 {
 		y = e.by1
 	}
-	line := y - e.by1 + e.startLine
+	line := y - e.by1 + e.top
 	if line > len(e.buf) {
 		line = len(e.buf)
 	}
@@ -405,8 +410,8 @@ func (e *Editor) cursorUp() (redraw bool) {
 	}
 
 	defer e.syncCursor()
-	if e.line == e.startLine {
-		e.startLine--
+	if e.line == e.top {
+		e.top--
 		e.cursorLineAdd(-1)
 		return true
 	}
@@ -421,12 +426,12 @@ func (e *Editor) cursorDown() (redraw bool) {
 	}
 
 	defer e.syncCursor()
-	if e.line < e.startLine+e.PageSize()-1 {
+	if e.line < e.top+e.PageSize()-1 {
 		e.cursorLineAdd(1)
 		return false
 	}
 
-	e.startLine++
+	e.top++
 	e.cursorLineAdd(1)
 	return true
 }
@@ -451,24 +456,24 @@ func (e *Editor) cursorLineEnd() {
 }
 
 func (e *Editor) ScrollUp(delta int) (ok bool) {
-	if e.startLine == 1 {
+	if e.top == 1 {
 		return false
 	}
-	if e.startLine-delta < 1 {
-		e.startLine = 1
+	if e.top-delta < 1 {
+		e.top = 1
 	} else {
-		e.startLine -= delta
+		e.top -= delta
 	}
 	return true
 }
 
 func (e *Editor) ScrollDown(delta int) (ok bool) {
-	if e.startLine >= len(e.buf)-e.PageSize()+1 {
+	if e.top >= len(e.buf)-e.PageSize()+1 {
 		return false
 	}
-	e.startLine += delta
-	if e.startLine >= len(e.buf)-e.PageSize()+1 {
-		e.startLine = len(e.buf) - e.PageSize() + 1
+	e.top += delta
+	if e.top >= len(e.buf)-e.PageSize()+1 {
+		e.top = len(e.buf) - e.PageSize() + 1
 	}
 	return true
 }
@@ -579,21 +584,21 @@ func (e *Editor) Find(s string) {
 	if len(s) == 0 {
 		return
 	}
-	e.findKey = s
+	e.find.key = s
 
 	var match [][2]int
 	for i := range e.buf {
 		var index, start int
 		for {
-			index = strings.Index(string(e.buf[i][start:]), e.findKey)
+			index = strings.Index(string(e.buf[i][start:]), s)
 			if index < 0 {
 				break
 			}
 			match = append(match, [2]int{i, start + index})
-			start += index + len(e.findKey)
+			start += index + len(s)
 		}
 	}
-	e.findMatch = match
+	e.find.match = match
 	if len(match) == 0 {
 		return
 	}
@@ -602,7 +607,7 @@ func (e *Editor) Find(s string) {
 	var minGap = len(e.buf)
 	var near int
 	for i, m := range match {
-		gap := m[0] + 1 - e.findLine
+		gap := m[0] + 1 - e.find.line
 		if gap < 0 {
 			gap = 0 - gap
 		}
@@ -617,60 +622,60 @@ func (e *Editor) Find(s string) {
 			break
 		}
 	}
-	e.findIndex = near
+	e.find.index = near
 
 	e.line = match[near][0] + 1
 	// place the cursor at the end of the matching word for easy editing
-	e.column = match[near][1] + len(e.findKey) + 1
-	if e.line < e.startLine {
-		e.startLine = e.line
-	} else if e.line > (e.startLine + e.PageSize() - 1) {
-		e.startLine = e.line - e.PageSize()/2
+	e.column = match[near][1] + len(e.find.key) + 1
+	if e.line < e.top {
+		e.top = e.line
+	} else if e.line > (e.top + e.PageSize() - 1) {
+		e.top = e.line - e.PageSize()/2
 	}
 }
 
 func (e *Editor) FindNext() {
-	if len(e.findMatch) == 0 {
+	if len(e.find.match) == 0 {
 		return
 	}
 
-	if e.findIndex == len(e.findMatch)-1 {
-		e.findIndex = 0
+	if e.find.index == len(e.find.match)-1 {
+		e.find.index = 0
 	} else {
-		e.findIndex++
+		e.find.index++
 	}
 
-	i, j := e.findMatch[e.findIndex][0], e.findMatch[e.findIndex][1]
+	i, j := e.find.match[e.find.index][0], e.find.match[e.find.index][1]
 	e.line = i + 1
-	if e.line < e.startLine {
-		e.startLine = e.line
-	} else if e.line > (e.startLine + e.PageSize() - 1) {
-		e.startLine = e.line - e.PageSize()/2
+	if e.line < e.top {
+		e.top = e.line
+	} else if e.line > (e.top + e.PageSize() - 1) {
+		e.top = e.line - e.PageSize()/2
 	}
 	// place the cursor at the end of the matching word for easy editing
-	e.column = j + len(e.findKey) + 1
+	e.column = j + len(e.find.key) + 1
 }
 
 func (e *Editor) FindPrev() {
-	if len(e.findMatch) == 0 {
+	if len(e.find.match) == 0 {
 		return
 	}
 
-	if e.findIndex == 0 {
-		e.findIndex = len(e.findMatch) - 1
+	if e.find.index == 0 {
+		e.find.index = len(e.find.match) - 1
 	} else {
-		e.findIndex--
+		e.find.index--
 	}
 
-	i, j := e.findMatch[e.findIndex][0], e.findMatch[e.findIndex][1]
+	i, j := e.find.match[e.find.index][0], e.find.match[e.find.index][1]
 	e.line = i + 1
-	if e.line < e.startLine {
-		e.startLine = e.line
-	} else if e.line > (e.startLine + e.PageSize() - 1) {
-		e.startLine = e.line - e.PageSize()/2
+	if e.line < e.top {
+		e.top = e.line
+	} else if e.line > (e.top + e.PageSize() - 1) {
+		e.top = e.line - e.PageSize()/2
 	}
 	// place the cursor at the end of the matching word for easy editing
-	e.column = j + len(e.findKey) + 1
+	e.column = j + len(e.find.key) + 1
 }
 
 func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
@@ -806,7 +811,7 @@ func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
 			e.Draw(screen)
 			return
 		}
-		if e.findMatch != nil {
+		if e.find.match != nil {
 			e.ClearFind()
 			e.Draw(screen)
 			return
@@ -891,10 +896,7 @@ func (e *Editor) accecptSuggestion() {
 }
 
 func (e *Editor) ClearFind() {
-	e.findLine = 0
-	e.findKey = ""
-	e.findMatch = nil
-	e.findIndex = 0
+	e.find = find{}
 }
 
 func (e *Editor) SetPos(x, y, width, height int) {
@@ -933,14 +935,14 @@ func (e *Editor) Load(filename string) {
 	}
 
 	// restore cursor position
-	e.lastPos[e.filename] = [3]int{e.startLine, e.line, e.column}
+	e.lastPos[e.filename] = [3]int{e.top, e.line, e.column}
 	e.filename = filename
 	if pos, ok := e.lastPos[filename]; ok {
-		e.startLine = pos[0]
+		e.top = pos[0]
 		e.line = pos[1]
 		e.column = pos[2]
 	} else {
-		e.startLine = 1
+		e.top = 1
 		e.line = 1
 		e.column = 1
 	}
@@ -952,11 +954,11 @@ func (e *Editor) Load(filename string) {
 }
 
 type lineBar struct {
-	x1, y1    int
-	x2, y2    int
-	style     tcell.Style
-	startLine int
-	endLine   int
+	x1, y1 int
+	x2, y2 int
+	style  tcell.Style
+	top    int
+	bottom int
 }
 
 func (b *lineBar) render(screen tcell.Screen) {
@@ -968,14 +970,14 @@ func (b *lineBar) render(screen tcell.Screen) {
 
 	paddingRight := 1
 	x, y := b.x1, b.y1
-	for i := b.startLine; i <= b.endLine; i++ {
+	for i := b.top; i <= b.bottom; i++ {
 		s := strconv.Itoa(i)
 		for j, c := range s {
 			if x+j > b.x2 {
 				break
 			}
 			// align right
-			screen.SetContent(b.x2-(len(s)-j)-paddingRight, y+i-b.startLine, c, nil, b.style)
+			screen.SetContent(b.x2-(len(s)-j)-paddingRight, y+i-b.top, c, nil, b.style)
 		}
 	}
 }
