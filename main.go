@@ -11,7 +11,7 @@ import (
 )
 
 // recent focused editor
-var recentE *Editor
+var recentE *EditorGroup
 
 // A multiplier to be used on the deltaX and deltaY of mouse wheel scroll events
 const scrollSensitivity = 0.125
@@ -41,7 +41,10 @@ func main() {
 		statusBar.Draw(app.Screen())
 	})
 
-	e := newEditor(app.Screen(), filename, statusBar.Status)
+	e := NewEditorGroup(app.Screen(), statusBar.Status)
+	if filename != "" {
+		e.Open(filename)
+	}
 	recentE = e
 	editors := HStack(e)
 	app.SetBody(VStack(editors, statusBar))
@@ -51,7 +54,7 @@ func main() {
 	fb.SetPos(width-40, 1, 40, 1)
 	fb.Handle(tcell.KeyRune, func(k *tcell.EventKey, screen tcell.Screen) {
 		fb.keyword = append(fb.keyword, k.Rune())
-		recentE.Find(string(fb.keyword))
+		recentE.editor.Find(string(fb.keyword))
 		recentE.Draw(screen)
 		fb.Draw(screen)
 	})
@@ -61,10 +64,10 @@ func main() {
 		}
 		fb.keyword = fb.keyword[:len(fb.keyword)-1]
 		if len(fb.keyword) == 0 {
-			recentE.ClearFind()
+			recentE.editor.ClearFind()
 			recentE.Draw(screen)
 		} else {
-			recentE.Find(string(fb.keyword))
+			recentE.editor.Find(string(fb.keyword))
 			recentE.Draw(screen)
 		}
 		fb.Draw(screen)
@@ -75,33 +78,33 @@ func main() {
 		}
 		fb.keyword = fb.keyword[:len(fb.keyword)-1]
 		if len(fb.keyword) == 0 {
-			recentE.ClearFind()
+			recentE.editor.ClearFind()
 			recentE.Draw(screen)
 		} else {
-			recentE.Find(string(fb.keyword))
+			recentE.editor.Find(string(fb.keyword))
 			recentE.Draw(screen)
 		}
 		fb.Draw(screen)
 	})
 	fb.Handle(tcell.KeyEnter, func(k *tcell.EventKey, screen tcell.Screen) {
-		recentE.FindNext()
+		recentE.editor.FindNext()
 		recentE.Draw(screen)
 		fb.Draw(screen)
 	})
 	fb.Handle(tcell.KeyDown, func(k *tcell.EventKey, screen tcell.Screen) {
-		recentE.FindNext()
+		recentE.editor.FindNext()
 		recentE.Draw(screen)
 		fb.Draw(screen)
 	})
 	fb.Handle(tcell.KeyUp, func(k *tcell.EventKey, screen tcell.Screen) {
-		recentE.FindPrev()
+		recentE.editor.FindPrev()
 		recentE.Draw(screen)
 		fb.Draw(screen)
 	})
 	fb.Handle(tcell.KeyESC, func(k *tcell.EventKey, screen tcell.Screen) {
 		fb.keyword = nil
 		app.Focus(recentE)
-		recentE.ClearFind()
+		recentE.editor.ClearFind()
 		recentE.Draw(screen) // cover the findbar
 	})
 
@@ -129,13 +132,13 @@ func main() {
 			return
 		}
 		defer f.Close()
-		_, err = recentE.WriteTo(f)
+		_, err = recentE.editor.WriteTo(f)
 		if err != nil {
 			log.Print(err)
 			return
 		}
 
-		recentE.Load(string(sb.name))
+		recentE.Open(string(sb.name))
 		app.Focus(recentE)
 		recentE.Draw(screen)
 		sb.name = nil
@@ -156,7 +159,7 @@ func main() {
 	})
 	gb.Handle(tcell.KeyRune, func(k *tcell.EventKey, screen tcell.Screen) {
 		defer gb.Draw(screen)
-		recentE.Draw(screen) // clear previous options
+		app.Redraw() // clear previous options
 		gb.keyword = append(gb.keyword, k.Rune())
 		if gb.keyword[0] == ':' {
 			return
@@ -198,16 +201,16 @@ func main() {
 				log.Printf("goto: invalid line number: %s", err)
 				return
 			}
-			if line < 1 || line > len(recentE.buf)+1 {
+			if line < 1 || line > len(recentE.editor.buf)+1 {
 				log.Printf("goto: line number out of range")
 				return
 			}
-			recentE.line = line
-			recentE.column = 1
-			if line <= recentE.PageSize()/2 {
-				recentE.top = 1
+			recentE.editor.cursor.row = line - 1
+			recentE.editor.cursor.col = 0
+			if line <= recentE.editor.PageSize()/2 {
+				recentE.editor.top = 1
 			} else {
-				recentE.top = line - recentE.PageSize()/2
+				recentE.editor.top = line - recentE.editor.PageSize()/2
 			}
 			app.Redraw()
 			app.Focus(recentE)
@@ -215,7 +218,7 @@ func main() {
 		}
 		// go to file
 		if len(gb.options) > 0 {
-			recentE.Load(gb.options[gb.index])
+			recentE.Open(gb.options[gb.index])
 			app.Redraw()
 			app.Focus(recentE)
 		}
@@ -235,9 +238,10 @@ func main() {
 		gb.Draw(screen)
 	})
 	gb.Handle(tcell.KeyCtrlBackslash, func(k *tcell.EventKey, screen tcell.Screen) {
-		ne := newEditor(app.Screen(), gb.options[gb.index], statusBar.Status)
-		editors.Views = append(editors.Views, ne)
-		app.Focus(ne)
+		g := NewEditorGroup(app.Screen(), statusBar.Status)
+		g.Open(gb.options[gb.index])
+		editors.Views = append(editors.Views, g)
+		app.Focus(g)
 		app.Redraw()
 	})
 
@@ -246,26 +250,26 @@ func main() {
 		app.Close()
 	})
 	app.Handle(tcell.KeyCtrlF, func(*tcell.EventKey) {
-		recentE.find.line = recentE.line
+		recentE.editor.find.line = recentE.editor.cursor.row
 		width, _ := app.Screen().Size()
 		fb.SetPos(width-40, 1, 40, 1)
 		app.Focus(fb)
 		fb.Draw(app.Screen())
 	})
 	app.Handle(tcell.KeyCtrlS, func(*tcell.EventKey) {
-		if !recentE.dirty {
+		if !recentE.editor.dirty {
 			return
 		}
-		if recentE.filename == "" {
+		if recentE.editor.filename == "" {
 			app.Focus(sb)
 			sb.Draw(app.Screen())
 		} else {
-			f, err := os.Create(recentE.filename)
+			f, err := os.Create(recentE.editor.filename)
 			if err != nil {
 				log.Print(err)
 				return
 			}
-			_, err = recentE.WriteTo(f)
+			_, err = recentE.editor.WriteTo(f)
 			f.Close()
 			if err != nil {
 				log.Print(err)
@@ -291,17 +295,16 @@ func main() {
 		app.Focus(gb)
 	})
 	app.Handle(tcell.KeyCtrlW, func(*tcell.EventKey) {
-		if recentE.dirty && !sb.prompt {
+		if recentE.editor.dirty && !sb.prompt {
 			app.Focus(sb)
-			sb.name = []rune(e.filename)
+			sb.name = []rune(e.editor.filename)
 			sb.prompt = true
 			sb.Draw(app.Screen())
 			return
 		}
 
-		recentE.titleBar.Close()
+		recentE.CloseOne()
 		if len(recentE.titleBar.names) > 0 {
-			recentE.Load(recentE.titleBar.names[recentE.titleBar.index])
 			recentE.Draw(app.Screen())
 			return
 		}
@@ -323,7 +326,7 @@ func main() {
 		if j < 0 {
 			j = 0
 		}
-		prevE := editors.Views[j].(*Editor)
+		prevE := editors.Views[j].(*EditorGroup)
 		app.Focus(prevE)
 		app.Redraw()
 	})

@@ -6,13 +6,12 @@ import (
 
 type titleBar struct {
 	BaseView
-	e     *Editor
 	names []string
-	index int // indicate current name
+	i     int
 }
 
-func newTitleBar(e *Editor, name string) *titleBar {
-	t := &titleBar{e: e}
+func newTitleBar(name string) *titleBar {
+	t := &titleBar{}
 	t.height = 1
 	if name != "" {
 		t.names = append(t.names, name)
@@ -26,30 +25,10 @@ func (t *titleBar) Click(x, y int) {
 	for i := range t.names {
 		end := start + len(t.names[i]) + len(" |")
 		if start <= x && x <= end {
-			t.index = i
+			t.i = i
 			return
 		}
 		start = end + 1
-	}
-}
-
-// Close current name
-func (t *titleBar) Close() {
-	if len(t.names) == 0 {
-		return
-	}
-	if len(t.names) == 1 {
-		t.names = nil
-		return
-	}
-
-	if t.index == len(t.names)-1 {
-		t.names = t.names[:len(t.names)-1]
-	} else {
-		t.names = append(t.names[:t.index], t.names[t.index+1:]...)
-	}
-	if t.index > len(t.names)-1 {
-		t.index = len(t.names) - 1
 	}
 }
 
@@ -73,7 +52,7 @@ func (t *titleBar) Draw(screen tcell.Screen) {
 	var i int
 	for j, name := range t.names {
 		newstyle := style
-		if j == t.index {
+		if j == t.i {
 			newstyle = newstyle.Background(tcell.ColorLightGray).Italic(true)
 		}
 		for _, c := range name {
@@ -92,10 +71,30 @@ func (t *titleBar) Draw(screen tcell.Screen) {
 func (t *titleBar) Add(s string) {
 	for i, name := range t.names {
 		if name == s {
-			t.index = i
+			t.i = i
 			return
 		}
 	}
 	t.names = append(t.names, s)
-	t.index = len(t.names) - 1
+	t.i = len(t.names) - 1
+}
+
+// delete current name
+func (t *titleBar) Del() {
+	if len(t.names) == 0 {
+		return
+	}
+	if len(t.names) == 1 {
+		t.names = nil
+		return
+	}
+
+	if t.i == len(t.names)-1 {
+		t.names = t.names[:len(t.names)-1]
+	} else {
+		t.names = append(t.names[:t.i], t.names[t.i+1:]...)
+	}
+	if t.i > len(t.names)-1 {
+		t.i = len(t.names) - 1
+	}
 }
