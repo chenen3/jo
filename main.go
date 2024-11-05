@@ -35,6 +35,13 @@ func main() {
 		log.Print(err)
 		return
 	}
+	defer func() {
+		err := recover()
+		if err != nil {
+			app.Close()
+			log.Panic(err)
+		}
+	}()
 
 	statusBar := newStatusBar()
 	statusBar.Status = BindStr("", func() {

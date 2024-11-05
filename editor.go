@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -182,17 +183,17 @@ func (e *Editor) Click(x, y int) {
 	}
 	col := x - e.bx1 + 1
 	tabs := leadingTabs(e.buf[line-1])
-	if col <= tabs*tabWidth {
-		i, j := col/tabWidth, col%tabWidth
+	if col <= tabs*tabSize {
+		i, j := col/tabSize, col%tabSize
 		// When cursor is over half of the tabWidth,
 		// will be moved to the next tab.
-		if j > tabWidth/2 {
+		if j > tabSize/2 {
 			col = i + 2
 		} else {
 			col = i + 1
 		}
 	} else {
-		col -= tabs * (tabWidth - 1)
+		col -= tabs * (tabSize - 1)
 	}
 
 	if col > len(e.buf[line-1])+1 {
@@ -202,7 +203,7 @@ func (e *Editor) Click(x, y int) {
 	defer e.syncCursor()
 
 	if e.clickCount == nil || e.clickCount.x != x || e.clickCount.y != y ||
-		time.Since(e.clickCount.since) > time.Second/2 {
+		time.Since(e.clickCount.since) > time.Second*2/3 {
 		e.clickCount = &struct {
 			x, y  int
 			n     int
@@ -297,7 +298,8 @@ func newEditor(screen tcell.Screen, filename string, status *bindStr) *Editor {
 // the number of lines visible in the editor view
 func (e *Editor) PageSize() int { return e.by2 - e.by1 + 1 }
 
-const tabWidth = 4
+// the number of spaces a tab is equal to
+const tabSize = 4
 
 // return the number of leading tabs
 func leadingTabs(line []rune) int {
@@ -317,9 +319,9 @@ func padCol(line []rune, col int) int {
 	var i int
 	nTab := leadingTabs(line)
 	if col < nTab {
-		i = (col) * tabWidth
+		i = (col) * tabSize
 	} else {
-		padding := nTab * (tabWidth - 1)
+		padding := nTab * (tabSize - 1)
 		i = col + padding
 	}
 	return i
@@ -332,10 +334,10 @@ func unpadCol(line []rune, padCol int) int {
 	}
 	var col int
 	n := leadingTabs(line)
-	if padCol < n*tabWidth {
-		col = padCol / tabWidth
+	if padCol < n*tabSize {
+		col = padCol / tabSize
 	} else {
-		padding := n * (tabWidth - 1)
+		padding := n * (tabSize - 1)
 		col = padCol - padding
 		if col > len(line)-1 {
 			col = len(line) - 1
@@ -366,18 +368,24 @@ func (e *Editor) drawLine(screen tcell.Screen, line int) {
 		}
 	}
 
-	tokenInfo := parseToken(text)
-	i := 0
+	var style = e.style
+	var i int
+	var tokenInfo []tokenInfo
+	if filepath.Ext(e.filename) == ".go" {
+		tokenInfo = parseToken(text)
+	}
+
 	tabs := leadingTabs(text)
 	padding := 0
 	_, bg, _ := e.style.Decompose()
-	style := tokenInfo[i].Style().Background(bg)
 	for j := range text {
 		if e.bx1+padding+j > e.bx2 {
 			break
 		}
-		if j >= tokenInfo[i].off+tokenInfo[i].len && i < len(tokenInfo)-1 {
-			i++
+		if len(tokenInfo) > 0 {
+			if j >= tokenInfo[i].off+tokenInfo[i].len && i < len(tokenInfo)-1 {
+				i++
+			}
 			style = tokenInfo[i].Style().Background(bg)
 		}
 
@@ -405,7 +413,7 @@ func (e *Editor) drawLine(screen tcell.Screen, line int) {
 		if j < tabs {
 			// consider showing tab as '|' for debugging
 			screen.SetContent(e.bx1+padding+j, e.by1+line-e.top, ' ', nil, e.style.Foreground(tcell.ColorGray))
-			for k := 0; k < tabWidth-1; k++ {
+			for k := 0; k < tabSize-1; k++ {
 				padding++
 				screen.SetContent(e.bx1+padding+j, e.by1+line-e.top, ' ', nil, e.style.Foreground(tcell.ColorGray))
 			}
@@ -505,7 +513,7 @@ func (e *Editor) moveLeft() {
 	}
 	// head of line
 	e.cursor.row--
-	e.cursor.col = len(e.buf[e.cursor.row]) - 1
+	e.cursor.col = len(e.buf[e.cursor.row])
 	e.syncCursor()
 }
 
@@ -577,7 +585,7 @@ func (e *Editor) deleteLeft() (redraw bool) {
 		prevLine := e.buf[e.cursor.row-1]
 		e.buf[e.cursor.row-1] = append(prevLine, e.buf[e.cursor.row]...)
 		e.buf = append(e.buf[:e.cursor.row], e.buf[e.cursor.row+1:]...)
-		Move(e, pos{e.cursor.row - 1, len(prevLine) - 1}).Do()
+		Move(e, pos{e.cursor.row - 1, len(prevLine)}).Do()
 		return true
 	}
 
@@ -599,11 +607,25 @@ func (e *Editor) delete(start, stop pos) {
 }
 
 func (e *Editor) cursorEnter() {
+	line := e.buf[e.cursor.row]
+	n := leadingTabs(line)
+	if e.cursor.col > 0 {
+		switch line[e.cursor.col-1] {
+		case '(', '{', '[':
+			n++
+		}
+	}
+	indent := make([]rune, n)
+	for i := 0; i < n; i++ {
+		indent[i] = '\t'
+	}
+	// auto indent
+	text := append(indent, line[e.cursor.col:]...)
+
 	e.dirty = true
-	text := e.buf[e.cursor.row][e.cursor.col:]
-	e.buf[e.cursor.row] = e.buf[e.cursor.row][:e.cursor.col]
+	e.buf[e.cursor.row] = line[:e.cursor.col]
 	e.buf = slices.Insert(e.buf, e.cursor.row+1, text)
-	Move(e, pos{e.cursor.row + 1, 0}).Do()
+	Move(e, pos{e.cursor.row + 1, n}).Do()
 }
 
 // A newline is appended if the last character of buffer is not
@@ -755,7 +777,7 @@ func (e *Editor) HandleEventKey(ev *tcell.EventKey, screen tcell.Screen) {
 		n := leadingTabs(e.buf[e.cursor.row])
 		var col int
 		if n > 0 {
-			col = n * tabWidth
+			col = n * tabSize
 		}
 		// to the first non-whitespace character
 		Move(e, pos{e.cursor.row, col}).Do()
